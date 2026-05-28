@@ -60,7 +60,7 @@ export default function Onboarding({ session }) {
                 max="12" 
                 value={eatingWindow}
                 onChange={(e) => setEatingWindow(parseInt(e.target.value))}
-                className="w-full h-3 rounded-full appearance-none cursor-pointer accent-green-500 hover:accent-green-600 outline-none transition-all"
+                className="w-full h-4 rounded-full appearance-none cursor-pointer outline-none transition-all slider-thumb-premium"
                 style={{
                   background: `linear-gradient(to right, #22c55e 0%, #22c55e ${(eatingWindow - 1) / 11 * 100}%, #e5e7eb ${(eatingWindow - 1) / 11 * 100}%, #e5e7eb 100%)`
                 }}
