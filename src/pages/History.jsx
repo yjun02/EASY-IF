@@ -52,12 +52,10 @@ export default function History({ session }) {
       
     if (data) {
       setSummaries(data);
-      // Auto-select the most recent date with a record
-      if (autoSelect && data.length > 0) {
-        const sorted = [...data].sort((a, b) => b.date.localeCompare(a.date));
-        const latestDay = new Date(sorted[0].date + 'T12:00:00');
-        // Defer so that state is settled before handleDayClick runs
-        setTimeout(() => handleDayClick(latestDay), 0);
+      // Auto-select today
+      if (autoSelect) {
+        const today = new Date();
+        setTimeout(() => handleDayClick(today), 0);
       }
     }
   };
@@ -325,16 +323,18 @@ export default function History({ session }) {
                           {dayDetail.meals.map((meal, i) => {
                             const t = new Date(meal.logged_at);
                             return (
-                              <div key={i} className="bg-white rounded-xl px-4 py-3 flex items-center justify-between border border-gray-100">
-                                <div className="flex items-center gap-3">
-                                  <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-lg font-mono">
+                              <div key={i} className="bg-white rounded-xl px-4 py-3 flex items-start gap-3 border border-gray-100">
+                                <div className="pt-0.5 shrink-0">
+                                  <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-lg font-mono">
                                     {t.getHours().toString().padStart(2,'0')}:{t.getMinutes().toString().padStart(2,'0')}
                                   </span>
-                                  <span className="text-sm font-bold text-gray-800">{meal.food_name}</span>
                                 </div>
-                                {meal.amount && (
-                                  <span className="text-xs text-gray-400">{meal.amount}</span>
-                                )}
+                                <div className="flex flex-col gap-1">
+                                  <span className="text-sm font-bold text-gray-800 leading-tight">{meal.food_name}</span>
+                                  {meal.amount && (
+                                    <span className="text-xs text-gray-500 font-medium">{meal.amount}</span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}

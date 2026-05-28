@@ -130,7 +130,22 @@ export default function Dashboard({ session }) {
         setTimerDisplay(`${h}:${m}:${s}`);
       } else {
         setAppState('C');
-        setTimerDisplay('00:00:00');
+        const lastMealTime = new Date(mealLogs[mealLogs.length - 1].logged_at);
+        const fastingEndTime = addHours(lastMealTime, targetFasting);
+        
+        if (now < fastingEndTime) {
+          const diffSecs = differenceInSeconds(fastingEndTime, now);
+          const h = Math.floor(diffSecs / 3600).toString().padStart(2, '0');
+          const m = Math.floor((diffSecs % 3600) / 60).toString().padStart(2, '0');
+          const s = (diffSecs % 60).toString().padStart(2, '0');
+          setTimerDisplay(`${h}:${m}:${s}`);
+        } else {
+          const diffSecs = differenceInSeconds(now, fastingEndTime);
+          const h = Math.floor(diffSecs / 3600).toString().padStart(2, '0');
+          const m = Math.floor((diffSecs % 3600) / 60).toString().padStart(2, '0');
+          const s = (diffSecs % 60).toString().padStart(2, '0');
+          setTimerDisplay(`+${h}:${m}:${s}`);
+        }
       }
     };
 
@@ -152,7 +167,7 @@ export default function Dashboard({ session }) {
     setFeedbackError('');
 
     try {
-      const result = await generateDailyFeedback();
+      const result = await generateDailyFeedback(session?.access_token);
 
       // 응답 검증: 최소 길이 및 한국어 포함 여부
       if (!result || result.trim().length < 20) {
@@ -271,25 +286,25 @@ export default function Dashboard({ session }) {
           {/* Status Timer Card */}
           <div className={`rounded-3xl p-6 shadow-sm border transition-colors duration-500 ${
             appState === 'B' ? 'bg-green-50 border-green-100 text-green-900' : 
-            appState === 'C' ? 'bg-gray-50 border-gray-100 text-gray-900' : 
+            appState === 'C' ? 'bg-red-50 border-red-100 text-red-900' : 
             'bg-emerald-500 border-emerald-600 text-white'
           }`}>
             <div className="flex justify-between items-center mb-4">
               <span className="text-sm font-bold opacity-80">
                 {appState === 'A' ? '목표 공복 시간까지' : 
                  appState === 'B' ? `${targetFasting}시간 공복 성공! 식사 가능` : 
-                 '식사 시간 종료'}
+                 timerDisplay.startsWith('+') ? '공복 목표 초과 달성! 👏' : '공복 목표 달성까지'}
               </span>
-              <Clock size={20} className="opacity-80" />
+              <Clock size={24} className="opacity-80" />
             </div>
             
-            <div className="text-4xl md:text-5xl font-black tracking-tight font-mono mb-2">
+            <div className="text-4xl md:text-6xl font-black tracking-tight font-mono mb-2">
               {timerDisplay}
             </div>
             <p className="text-sm font-medium opacity-80">
               {appState === 'A' ? '오늘 첫 식사를 등록하세요' : 
                appState === 'B' ? '식사 가능 남은 시간' : 
-               '다음 공복 목표를 위해 물을 충분히 드세요'}
+               timerDisplay.startsWith('+') ? '대단해요! 목표 시간을 넘겼습니다' : '다음 공복 목표를 위해 물을 충분히 드세요'}
             </p>
           </div>
 
