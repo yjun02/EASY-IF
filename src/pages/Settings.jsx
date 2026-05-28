@@ -1,24 +1,58 @@
 import { useState, useEffect } from 'react';
-import { LogOut, Trash2, Clock, ChevronRight } from 'lucide-react';
+import { LogOut, Trash2, Clock, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
+import { differenceInHours, addHours, format } from 'date-fns';
+import { ko } from 'date-fns/locale';
 import { supabase } from '../lib/supabase';
 
 export default function Settings({ session }) {
   const [eatingWindow, setEatingWindow] = useState(8);
+  const [canUpdate, setCanUpdate] = useState(true);
+  const [nextUpdateTime, setNextUpdateTime] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
     async function loadProfile() {
+      setIsInitializing(true);
       if (session?.user) {
-        const { data } = await supabase.from('users_profile').select('eating_window').eq('id', session.user.id).single();
-        if (data) setEatingWindow(data.eating_window);
+        const { data } = await supabase.from('users_profile').select('*').eq('id', session.user.id).single();
+        if (data) {
+          setEatingWindow(data.eating_window);
+          if (data.last_window_update) {
+            const lastTime = new Date(data.last_window_update);
+            const hoursSince = differenceInHours(new Date(), lastTime);
+            if (hoursSince < 24) {
+              setCanUpdate(false);
+              setNextUpdateTime(addHours(lastTime, 24));
+            }
+          }
+        }
       }
+      setIsInitializing(false);
     }
     loadProfile();
   }, [session]);
 
   const handleEatingWindowChange = async (e) => {
+    if (!window.confirm("식사 가능 시간을 변경하시겠습니까? 한 번 변경하면 24시간 동안 다시 변경할 수 없습니다.\n(단식이 리듬을 잃지 않도록 잦은 변경을 제한하고 있습니다.)")) {
+      return;
+    }
+    
     const newVal = Number(e.target.value);
-    setEatingWindow(newVal);
-    await supabase.from('users_profile').update({ eating_window: newVal }).eq('id', session.user.id);
+    const now = new Date().toISOString();
+    
+    // DB 업데이트
+    const { error } = await supabase.from('users_profile').update({ 
+      eating_window: newVal,
+      last_window_update: now
+    }).eq('id', session.user.id);
+
+    if (!error) {
+      setEatingWindow(newVal);
+      setCanUpdate(false);
+      setNextUpdateTime(addHours(new Date(now), 24));
+    } else {
+      alert("업데이트 중 오류가 발생했습니다. (last_window_update 컬럼 추가가 필요할 수 있습니다)");
+    }
   };
   const handleLogout = async () => {
     if (window.confirm("정말 로그아웃 하시겠습니까?")) {
@@ -39,8 +73,17 @@ export default function Settings({ session }) {
       }
     }
   };
+
+  if (isInitializing) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[80vh] w-full">
+        <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6">
+    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6 w-full">
       <div className="max-w-2xl w-full mx-auto md:bg-white md:rounded-3xl md:shadow-sm md:p-8 md:min-h-[80vh]">
         <h2 className="text-2xl font-black text-gray-900 mb-8">설정</h2>
         
@@ -62,12 +105,31 @@ export default function Settings({ session }) {
                 <select 
                   value={eatingWindow} 
                   onChange={handleEatingWindowChange}
-                  className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-green-500"
-                >                  {[...Array(12)].map((_, i) => (
+                  disabled={!canUpdate}
+                  className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >                  
+                  {[...Array(12)].map((_, i) => (
                     <option key={i+1} value={i+1}>{i+1}시간</option>
                   ))}
                 </select>
               </div>
+            </div>
+            
+            {/* 경고/안내 메시지 */}
+            <div className={`text-xs px-3 py-2 rounded-lg flex items-start gap-2 ${!canUpdate ? 'bg-orange-50 text-orange-700' : 'bg-gray-100 text-gray-500'}`}>
+              <AlertCircle size={14} className="mt-0.5 shrink-0" />
+              <p>
+                {!canUpdate && nextUpdateTime ? (
+                  <>
+                    <span className="font-bold">변경 제한 중:</span> 잦은 식사 시간 변경은 신체 대사 리듬과 AI 분석 결과에 혼란을 줄 수 있어 하루 1회로 제한됩니다.<br />
+                    (다음 변경 가능 시간: <span className="font-bold">{format(nextUpdateTime, 'M월 d일 HH:mm', { locale: ko })}</span>)
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold">주의:</span> 잦은 식사 시간 변경은 신체 대사 리듬과 AI 분석에 영향을 줄 수 있어 <span className="font-bold text-gray-700">하루 1회만 변경</span>할 수 있습니다.
+                  </>
+                )}
+              </p>
             </div>
           </div>
         </div>

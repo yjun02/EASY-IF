@@ -45,7 +45,7 @@ export default function Layout() {
       </aside>
 
       <main className="flex-1 w-full mx-auto bg-white min-h-screen relative pb-16 md:pb-0 flex flex-col">
-        <div className="flex-1">
+        <div key={location.pathname} className="flex-1 animate-fade-in flex flex-col">
           <Outlet />
         </div>
         <div className="md:hidden mt-auto pt-10 pb-6 px-4">

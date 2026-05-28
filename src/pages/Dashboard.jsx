@@ -8,6 +8,7 @@ import { ko } from 'date-fns/locale';
 export default function Dashboard({ session }) {
   const [eatingWindow, setEatingWindow] = useState(8); 
   const [mealLogs, setMealLogs] = useState([]);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [appState, setAppState] = useState('A'); 
   const [timerDisplay, setTimerDisplay] = useState('00:00:00');
   
@@ -44,8 +45,8 @@ export default function Dashboard({ session }) {
         setEatingWindow(profile.eating_window);
       }
 
-      fetchMealLogs();
-      loadExistingFeedback();
+      await Promise.all([fetchMealLogs(), loadExistingFeedback()]);
+      setIsInitializing(false);
     }
     
     if (session?.user) {
@@ -200,10 +201,17 @@ export default function Dashboard({ session }) {
     }
   };
 
+  if (isInitializing) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[80vh] w-full">
+        <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-white relative">
       <div className="flex-1 flex flex-col gap-6 p-4 md:p-6 max-w-2xl mx-auto w-full">
-        
         {/* Top Section: Status & Input */}
         <div className="flex flex-col gap-6">
           {/* Status Timer Card */}

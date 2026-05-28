@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, TrendingDown, BarChart3 } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, TrendingDown, BarChart3, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays, subMonths, subYears } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -16,19 +16,20 @@ export default function History({ session }) {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-  // Calendar data loading
-  useEffect(() => {
-    if (viewMode === 'calendar') {
-      loadCalendarData();
-    }
-  }, [currentDate, session, viewMode]);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  // Weight data loading
   useEffect(() => {
-    if (viewMode === 'weight') {
-      loadWeightData();
+    async function load() {
+      setIsInitializing(true);
+      if (viewMode === 'calendar') {
+        await loadCalendarData();
+      } else {
+        await loadWeightData();
+      }
+      setIsInitializing(false);
     }
-  }, [weightPeriod, customStart, customEnd, session, viewMode]);
+    load();
+  }, [currentDate, weightPeriod, customStart, customEnd, session, viewMode]);
 
   const loadCalendarData = async () => {
     const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
@@ -127,8 +128,16 @@ export default function History({ session }) {
     { key: 'custom', label: '직접 선택' },
   ];
 
+  if (isInitializing) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[80vh] w-full">
+        <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6 max-w-3xl mx-auto">
+    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6 max-w-3xl mx-auto w-full">
       <div className="md:bg-white md:rounded-3xl md:shadow-sm md:p-8 flex-1">
         
         {/* Header with toggle */}
