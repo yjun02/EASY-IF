@@ -1,8 +1,8 @@
-# ⏱️ 간단하게 간단하자 (Easy IF)
+# ⏱️ 간단하게 간단하자 (Easy IF : Easy Intermittent Fasting)
 
 ![Easy IF Banner](https://img.shields.io/badge/Easy_IF-간헐적_단식_매니저-10b981?style=for-the-badge&logo=react)
 
-**간단하게 간단하자(Easy IF)**는 개발자가 직접 3달만에 10kg을 감량하며 효과를 본 간헐적 단식 경험을 바탕으로, **먹는 시간**에 집중하여 누구나 쉽게 시작할 수 있도록 만든 체중 감량 매니저 사이트입니다. 사용자의 식사 패턴과 식단 기록을 분석하여 매일 **AI(Gemini) 대사 건강 코칭**을 제공합니다.
+**간단하게 간단하자(Easy IF, Easy Intermittent Fasting)**는 개발자가 직접 3달만에 10kg을 감량하며 효과를 본 간헐적 단식 경험을 바탕으로, **먹는 시간**에 집중하여 누구나 쉽게 시작할 수 있도록 만든 체중 감량 매니저 사이트입니다. 사용자의 식사 패턴과 식단 기록을 분석하여 매일 **AI(Gemini) 대사 건강 코칭**을 제공합니다.
 
 ---
 
