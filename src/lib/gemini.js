@@ -4,8 +4,11 @@ import { supabase } from './supabase';
  * 일일 AI 피드백을 생성합니다. (Supabase Edge Function 호출)
  * @returns {Promise<string>} AI 코칭 텍스트
  */
-export const generateDailyFeedback = async (token) => {
-  const options = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+export const generateDailyFeedback = async (token, cycleStartIso, cycleEndIso, prevFastingResult) => {
+  const options = {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: { cycleStartIso, cycleEndIso, prevFastingResult }
+  };
   const { data, error } = await supabase.functions.invoke('generate-feedback', options);
 
   if (error) {

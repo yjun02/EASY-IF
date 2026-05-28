@@ -7,10 +7,13 @@ import { ko } from 'date-fns/locale';
 
 export default function Dashboard({ session }) {
   const [eatingWindow, setEatingWindow] = useState(8); 
-  const [mealLogs, setMealLogs] = useState([]);
+  const [currentActiveCycle, setCurrentActiveCycle] = useState([]);
+  const [completedCycle, setCompletedCycle] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [appState, setAppState] = useState('A'); 
   const [timerDisplay, setTimerDisplay] = useState('00:00:00');
+  const [prevFastingResult, setPrevFastingResult] = useState(null);
+  const [prevFastingForAI, setPrevFastingForAI] = useState(null);
   
   // Form state
   const [timeInput, setTimeInput] = useState(format(new Date(), 'HH:mm'));
@@ -50,7 +53,7 @@ export default function Dashboard({ session }) {
         setEatingWindow(profile.eating_window);
       }
 
-      await Promise.all([fetchMealLogs(), loadExistingFeedback()]);
+      await fetchMealLogs();
       setIsInitializing(false);
     }
     
@@ -60,51 +63,149 @@ export default function Dashboard({ session }) {
   }, [session]);
 
   const fetchMealLogs = async () => {
-    const today = startOfDay(new Date()).toISOString();
+    const since = new Date();
+    since.setHours(since.getHours() - 72);
     const { data } = await supabase
       .from('meal_logs')
       .select('*')
       .eq('user_id', session.user.id)
-      .gte('logged_at', today)
+      .gte('logged_at', since.toISOString())
       .order('logged_at', { ascending: true });
       
-    if (data) {
-      setMealLogs(data);
-    }
-  };
+    if (data && data.length > 0) {
+      let cycles = [];
+      let currentCycle = null;
+      let ew = eatingWindow; // fallback, but we should use state or passed value. Actually eatingWindow is in outer scope
 
-  // 기존에 오늘 생성된 AI 피드백이 있는지 확인
-  const loadExistingFeedback = async () => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const { data } = await supabase
-      .from('daily_summaries')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .eq('date', todayStr)
-      .maybeSingle();
-    
-    if (data && data.ai_feedback) {
-      setFeedbackText(data.ai_feedback);
-      setFeedbackStatus('success');
-      feedbackTriggeredRef.current = true; // 이미 생성된 피드백이 있으므로 재트리거 방지
-    } else {
-      // 오늘의 피드백이 없으면 과거의 가장 최근 피드백을 가져옵니다.
-      const { data: pastData } = await supabase
-        .from('daily_summaries')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .lt('date', todayStr)
-        .not('ai_feedback', 'is', null)
-        .order('date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (pastData) {
-        setPreviousFeedback({
-          date: pastData.date,
-          text: pastData.ai_feedback
-        });
+      data.forEach(meal => {
+        const mealTime = new Date(meal.logged_at);
+        if (!currentCycle) {
+          currentCycle = [meal];
+          cycles.push(currentCycle);
+        } else {
+          const firstMealTime = new Date(currentCycle[0].logged_at);
+          if (mealTime <= addHours(firstMealTime, ew)) {
+            currentCycle.push(meal);
+          } else {
+            currentCycle = [meal];
+            cycles.push(currentCycle);
+          }
+        }
+      });
+
+      const lastCycle = cycles[cycles.length - 1];
+      const lastCycleFirstMealTime = new Date(lastCycle[0].logged_at);
+      const isLastCycleFinished = new Date() >= addHours(lastCycleFirstMealTime, ew);
+
+      let active = [];
+      let completed = null;
+      let prevToCompleted = null;
+
+      if (isLastCycleFinished) {
+        completed = lastCycle;
+        active = [];
+        prevToCompleted = cycles.length > 1 ? cycles[cycles.length - 2] : null;
+      } else {
+        active = lastCycle;
+        completed = cycles.length > 1 ? cycles[cycles.length - 2] : null;
+        prevToCompleted = cycles.length > 2 ? cycles[cycles.length - 3] : null;
       }
+
+      let newPrevResult = null;
+      if (active.length > 0 && completed) {
+        const prevLastMeal = new Date(completed[completed.length - 1].logged_at);
+        const currentFirstMeal = new Date(active[0].logged_at);
+        const fastingHours = (currentFirstMeal - prevLastMeal) / (1000 * 60 * 60);
+        
+        newPrevResult = {
+          hours: Math.round(fastingHours * 10) / 10,
+          success: fastingHours >= targetFasting
+        };
+        
+        const prevCycleDate = format(new Date(completed[0].logged_at), 'yyyy-MM-dd');
+        supabase.from('daily_summaries').upsert({
+          user_id: session.user.id,
+          date: prevCycleDate,
+          actual_fasting_hours: Math.round(fastingHours * 10) / 10,
+          is_success: fastingHours >= targetFasting,
+        }, { onConflict: 'user_id,date' }).then();
+      }
+
+      let aiPrevResult = null;
+      if (completed && prevToCompleted) {
+        const pastLastMeal = new Date(prevToCompleted[prevToCompleted.length - 1].logged_at);
+        const completedFirstMeal = new Date(completed[0].logged_at);
+        const fHours = (completedFirstMeal - pastLastMeal) / (1000 * 60 * 60);
+        aiPrevResult = {
+           hours: Math.round(fHours * 10) / 10,
+           success: fHours >= targetFasting
+        };
+      }
+
+      // 3. Load Feedback Status for completedCycle
+      let hasTriggered = false;
+      if (completed) {
+        const cycleDate = format(new Date(completed[0].logged_at), 'yyyy-MM-dd');
+        const { data: summaryData } = await supabase
+          .from('daily_summaries')
+          .select('ai_feedback')
+          .eq('user_id', session.user.id)
+          .eq('date', cycleDate)
+          .maybeSingle();
+
+        if (summaryData && summaryData.ai_feedback) {
+          if (summaryData.ai_feedback !== '[GENERATING]') {
+            setFeedbackText(summaryData.ai_feedback);
+            setFeedbackStatus('success');
+          } else {
+            setFeedbackStatus('loading');
+          }
+          hasTriggered = true;
+        } else {
+          setFeedbackText('');
+          setFeedbackStatus('idle');
+        }
+
+        // 4. Load Previous Feedback for Display in State A/B
+        const { data: pastData } = await supabase
+          .from('daily_summaries')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .lt('date', cycleDate)
+          .not('ai_feedback', 'is', null)
+          .not('ai_feedback', 'eq', '[GENERATING]')
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (pastData) {
+          setPreviousFeedback({
+            date: pastData.date,
+            text: pastData.ai_feedback
+          });
+        } else {
+          setPreviousFeedback(null);
+        }
+      } else {
+        setFeedbackText('');
+        setFeedbackStatus('idle');
+        setPreviousFeedback(null);
+      }
+
+      // 5. 모든 비동기 작업이 끝난 후 상태를 일괄 업데이트 (Race Condition 방지)
+      setPrevFastingResult(newPrevResult);
+      setPrevFastingForAI(aiPrevResult);
+      setCompletedCycle(completed);
+      setCurrentActiveCycle(active);
+      feedbackTriggeredRef.current = hasTriggered;
+
+    } else {
+      setPrevFastingResult(null);
+      setFeedbackText('');
+      setFeedbackStatus('idle');
+      feedbackTriggeredRef.current = false;
+      setPreviousFeedback(null);
+      setMealLogs([]);
     }
   };
 
@@ -112,25 +213,18 @@ export default function Dashboard({ session }) {
   useEffect(() => {
     const calculateStateAndTimer = () => {
       const now = new Date();
-      if (mealLogs.length === 0) {
-        setAppState('A');
-        setTimerDisplay(`${targetFasting}:00:00`);
-        return;
-      }
-
-      const firstMealTime = new Date(mealLogs[0].logged_at);
-      const windowEndTime = addHours(firstMealTime, eatingWindow);
-
-      if (now < windowEndTime) {
+      if (currentActiveCycle.length > 0) {
         setAppState('B');
+        const firstMealTime = new Date(currentActiveCycle[0].logged_at);
+        const windowEndTime = addHours(firstMealTime, eatingWindow);
         const diffSecs = differenceInSeconds(windowEndTime, now);
         const h = Math.floor(diffSecs / 3600).toString().padStart(2, '0');
         const m = Math.floor((diffSecs % 3600) / 60).toString().padStart(2, '0');
         const s = (diffSecs % 60).toString().padStart(2, '0');
         setTimerDisplay(`${h}:${m}:${s}`);
-      } else {
+      } else if (completedCycle) {
         setAppState('C');
-        const lastMealTime = new Date(mealLogs[mealLogs.length - 1].logged_at);
+        const lastMealTime = new Date(completedCycle[completedCycle.length - 1].logged_at);
         const fastingEndTime = addHours(lastMealTime, targetFasting);
         
         if (now < fastingEndTime) {
@@ -146,48 +240,38 @@ export default function Dashboard({ session }) {
           const s = (diffSecs % 60).toString().padStart(2, '0');
           setTimerDisplay(`+${h}:${m}:${s}`);
         }
+      } else {
+        setAppState('A');
+        setTimerDisplay(`${targetFasting}:00:00`);
       }
     };
 
     calculateStateAndTimer();
     const interval = setInterval(calculateStateAndTimer, 1000);
     return () => clearInterval(interval);
-  }, [mealLogs, eatingWindow, targetFasting]);
+  }, [currentActiveCycle, completedCycle, eatingWindow, targetFasting]);
 
   // AI 피드백 자동 트리거: State C 진입 시 1회만
   useEffect(() => {
-    if (appState === 'C' && mealLogs.length > 0 && !feedbackTriggeredRef.current) {
+    if (!isInitializing && appState === 'C' && completedCycle && !feedbackTriggeredRef.current) {
       feedbackTriggeredRef.current = true;
       triggerAiFeedback();
     }
-  }, [appState, mealLogs]);
+  }, [appState, completedCycle, isInitializing]);
 
   const triggerAiFeedback = async () => {
     setFeedbackStatus('loading');
     setFeedbackError('');
 
     try {
-      const result = await generateDailyFeedback(session?.access_token);
+      if (!completedCycle) return;
+      const cycleStartIso = completedCycle[0].logged_at;
+      const cycleEndIso = completedCycle[completedCycle.length - 1].logged_at;
+      const result = await generateDailyFeedback(session?.access_token, cycleStartIso, cycleEndIso, prevFastingForAI);
 
-      // 응답 검증: 최소 길이 및 한국어 포함 여부
       if (!result || result.trim().length < 20) {
         throw new Error('AI 응답이 너무 짧거나 비어 있습니다.');
       }
-
-      // DB에 저장
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
-      const firstMealTime = new Date(mealLogs[0].logged_at);
-      const lastMealTime = new Date(mealLogs[mealLogs.length - 1].logged_at);
-      const actualEatingHours = (lastMealTime - firstMealTime) / (1000 * 60 * 60);
-      const actualFastingHours = Math.round((24 - actualEatingHours) * 10) / 10;
-
-      await supabase.from('daily_summaries').upsert({
-        user_id: session.user.id,
-        date: todayStr,
-        ai_feedback: result.trim(),
-        fasting_hours: actualFastingHours,
-        is_success: actualFastingHours >= targetFasting,
-      }, { onConflict: 'user_id,date' });
 
       setFeedbackText(result.trim());
       setFeedbackStatus('success');
@@ -292,7 +376,13 @@ export default function Dashboard({ session }) {
             <div className="flex justify-between items-center mb-4">
               <span className="text-sm font-bold opacity-80">
                 {appState === 'A' ? '목표 공복 시간까지' : 
-                 appState === 'B' ? `${targetFasting}시간 공복 성공! 식사 가능` : 
+                 appState === 'B' ? (
+                   prevFastingResult 
+                     ? (prevFastingResult.success 
+                         ? `지난 공복 ${prevFastingResult.hours}시간 달성 👏 현재 식사 가능` 
+                         : `지난 공복 ${prevFastingResult.hours}시간 😢 (목표 미달)`)
+                     : `식사 가능 시간`
+                 ) : 
                  timerDisplay.startsWith('+') ? '공복 목표 초과 달성! 👏' : '공복 목표 달성까지'}
               </span>
               <Clock size={24} className="opacity-80" />
@@ -303,7 +393,7 @@ export default function Dashboard({ session }) {
             </div>
             <p className="text-sm font-medium opacity-80">
               {appState === 'A' ? '오늘 첫 식사를 등록하세요' : 
-               appState === 'B' ? '식사 가능 남은 시간' : 
+               appState === 'B' ? (prevFastingResult && !prevFastingResult.success ? '다음엔 더 길게 도전해보세요! (남은 식사 가능 시간)' : '남은 식사 가능 시간') : 
                timerDisplay.startsWith('+') ? '대단해요! 목표 시간을 넘겼습니다' : '다음 공복 목표를 위해 물을 충분히 드세요'}
             </p>
           </div>
@@ -447,23 +537,23 @@ export default function Dashboard({ session }) {
         <div className="flex flex-col h-full mt-4">
           <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-xl font-black text-gray-900">오늘의 식단 기록</h2>
-              <p className="text-sm text-gray-500 mt-1">{format(new Date(), 'M월 d일 eeee', { locale: ko })}</p>
+              <h2 className="text-xl font-black text-gray-900">현재 식사 사이클 기록</h2>
+              <p className="text-sm text-gray-500 mt-1">최근 식사 시작 기준</p>
             </div>
           </div>
 
           {/* Timeline View */}
           <div className="flex-1">
             <div className="relative pl-4 border-l-2 border-gray-200 flex flex-col gap-8 pb-8">
-              {mealLogs.length === 0 && (
+              {currentActiveCycle.length === 0 && (
                 <div className="text-sm text-gray-400 font-medium py-10 text-center">
-                  아직 기록된 식단이 없습니다.
+                  아직 기록된 식단이 없습니다. (현재 공복 중)
                 </div>
               )}
               
-              {mealLogs.map((log, index) => {
+              {currentActiveCycle.map((log, index) => {
                 const isFirst = index === 0;
-                const isLast = index === mealLogs.length - 1 && mealLogs.length > 1;
+                const isLast = index === currentActiveCycle.length - 1 && currentActiveCycle.length > 1;
                 const isEditing = editingLogId === log.id;
                 
                 return (

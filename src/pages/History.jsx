@@ -23,6 +23,26 @@ export default function History({ session }) {
 
   const [isInitializing, setIsInitializing] = useState(true);
   const isFirstLoad = useRef(true);
+  const [firstLogDate, setFirstLogDate] = useState(null);
+
+  useEffect(() => {
+    async function fetchFirstLog() {
+      const { data: firstMealData } = await supabase
+        .from('meal_logs')
+        .select('logged_at')
+        .eq('user_id', session.user.id)
+        .order('logged_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      if (firstMealData) {
+        setFirstLogDate(format(new Date(firstMealData.logged_at), 'yyyy-MM-dd'));
+      }
+    }
+    if (session?.user) {
+      fetchFirstLog();
+    }
+  }, [session]);
 
   useEffect(() => {
     async function load() {
@@ -236,18 +256,36 @@ export default function History({ session }) {
               ))}
               
               {daysInMonth.map(day => {
+                const dayStr = format(day, 'yyyy-MM-dd');
                 const summary = summaries.find(s => isSameDay(new Date(s.date), day));
                 const isSelected = selectedDate && isSameDay(selectedDate, day);
+                const isTodayDate = isSameDay(new Date(), day);
+                const isFirstDay = firstLogDate && dayStr === firstLogDate;
+                
                 return (
                   <div 
                     key={day.toString()} 
                     onClick={() => handleDayClick(day)}
-                    className={`aspect-square flex flex-col items-center justify-center rounded-2xl border cursor-pointer transition-all duration-150 ${
-                      isSelected ? 'border-green-500 ring-2 ring-green-300 bg-green-50 scale-105' :
+                    className={`relative aspect-square flex flex-col items-center justify-center rounded-2xl border cursor-pointer transition-all duration-150 ${
+                      isSelected ? 'border-green-500 bg-green-50 scale-105 z-10 ring-2 ring-green-300' :
                       summary ? (summary.is_success ? 'border-green-200 bg-green-50 hover:border-green-300' : 'border-red-200 bg-red-50 hover:border-red-300') : 'border-gray-100 bg-white hover:border-gray-200'
                     }`}
                   >
-                    <span className={`text-sm font-bold ${isSelected ? 'text-green-700' : 'text-gray-700'}`}>{format(day, 'd')}</span>
+                    {(isFirstDay || isTodayDate) && (
+                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 z-20 pointer-events-none">
+                        {isTodayDate && (
+                          <div className="bg-purple-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
+                            TODAY
+                          </div>
+                        )}
+                        {isFirstDay && (
+                          <div className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
+                            START 🏁
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <span className={`text-sm font-bold ${isSelected ? 'text-green-700' : isTodayDate ? 'text-purple-700' : 'text-gray-700'}`}>{format(day, 'd')}</span>
                     {summary && (
                       <div className={`w-2 h-2 rounded-full mt-1 ${summary.is_success ? 'bg-green-500' : 'bg-red-500'}`}></div>
                     )}
