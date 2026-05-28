@@ -305,7 +305,7 @@ export default function Dashboard({ session }) {
               />
               <input 
                 type="text" 
-                placeholder="음식 이름 (최대 30자)" 
+                placeholder="음식 이름 및 양 (최대 30자, 예: 바나나 1개, 그릭요거트 200g)" 
                 value={foodInput}
                 onChange={(e) => setFoodInput(e.target.value)}
                 maxLength={30}
@@ -314,7 +314,7 @@ export default function Dashboard({ session }) {
               />
               <input 
                 type="text" 
-                placeholder="비고 (양, 특징 등 간단 설명) - 선택" 
+                placeholder="비고 (최대 30자, 예: 요거트는 무가당으로 섭취 / 운동 후 섭취 등), 선택사항" 
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
                 maxLength={30}
@@ -322,8 +322,9 @@ export default function Dashboard({ session }) {
               />
               <input 
                 type="number" 
-                step="0.1"
-                placeholder="체중(kg) - 선택" 
+                step="0.01"
+                inputMode="decimal"
+                placeholder="체중(kg), 선택사항" 
                 value={weightInput}
                 onChange={(e) => setWeightInput(e.target.value)}
                 className="bg-gray-50 border-none rounded-xl px-4 py-3 md:p-4 text-sm md:text-base text-gray-800 w-full focus:ring-2 focus:ring-green-500 outline-none"
