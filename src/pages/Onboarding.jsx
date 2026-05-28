@@ -33,14 +33,15 @@ export default function Onboarding({ session }) {
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col justify-center px-6 py-12 max-w-[390px] mx-auto md:max-w-md">
+    <div className="h-full flex flex-col justify-center px-4 md:px-6 py-6 md:py-12 max-w-[390px] mx-auto md:max-w-md w-full flex-1">
       <div className="flex-1 flex flex-col justify-center">
-        <div className="mb-10 text-center">
+        {/* Hide title on mobile since Layout header shows it */}
+        <div className="hidden md:block mb-10 text-center">
           <h1 className="text-3xl font-black text-gray-900 mb-3 tracking-tight">간단하게 간단하자</h1>
           <p className="text-gray-500 font-medium">간단한 간헐적 단식 도우미</p>
         </div>
 
-        <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+        <div className="bg-gray-50 p-4 md:p-6 rounded-3xl border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4 text-center">하루에 몇 시간 동안 식사하시겠어요?</h2>
           
           <div className="flex flex-col items-center gap-6">
