@@ -45,6 +45,12 @@ export default function Layout() {
       </aside>
 
       <main className="flex-1 w-full mx-auto bg-white min-h-screen relative pb-16 md:pb-0 flex flex-col">
+        {/* Mobile Header */}
+        <header className="md:hidden pt-8 pb-4 flex flex-col items-center justify-center bg-white md:bg-gray-50">
+          <h1 className="text-xl font-bold text-gray-900">간단하게 간단하자</h1>
+          <p className="text-sm text-gray-500">Easy IF</p>
+        </header>
+
         <div key={location.pathname} className="flex-1 animate-fade-in flex flex-col">
           <Outlet />
         </div>

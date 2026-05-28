@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, Trash2, Sparkles, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Clock, Plus, Trash2, Sparkles, Loader2, AlertCircle, RefreshCw, Pencil, Check, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { generateDailyFeedback } from '../lib/gemini';
 import { format, startOfDay, addHours, differenceInSeconds, parse } from 'date-fns';
@@ -18,12 +18,17 @@ export default function Dashboard({ session }) {
   const [amountInput, setAmountInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
 
+  // Edit state
+  const [editingLogId, setEditingLogId] = useState(null);
+  const [editForm, setEditForm] = useState({ food_name: '', amount: '', weight: '', time: '' });
+
   // AI Feedback state
   // 'idle' | 'loading' | 'success' | 'error'
   const [feedbackStatus, setFeedbackStatus] = useState('idle');
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackError, setFeedbackError] = useState('');
   const feedbackTriggeredRef = useRef(false);
+  const [previousFeedback, setPreviousFeedback] = useState(null);
 
   const targetFasting = 24 - eatingWindow;
 
@@ -82,6 +87,24 @@ export default function Dashboard({ session }) {
       setFeedbackText(data.ai_feedback);
       setFeedbackStatus('success');
       feedbackTriggeredRef.current = true; // 이미 생성된 피드백이 있으므로 재트리거 방지
+    } else {
+      // 오늘의 피드백이 없으면 과거의 가장 최근 피드백을 가져옵니다.
+      const { data: pastData } = await supabase
+        .from('daily_summaries')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .lt('date', todayStr)
+        .not('ai_feedback', 'is', null)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (pastData) {
+        setPreviousFeedback({
+          date: pastData.date,
+          text: pastData.ai_feedback
+        });
+      }
     }
   };
 
@@ -177,7 +200,7 @@ export default function Dashboard({ session }) {
       logged_at: parsedTime.toISOString(),
       food_name: foodInput,
       amount: amountInput.trim() || '',
-      weight: weightInput ? parseFloat(weightInput) : null
+      weight: weightInput ? parseFloat(weightInput.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]) : null
     };
 
     const { error } = await supabase.from('meal_logs').insert(newLog);
@@ -198,6 +221,37 @@ export default function Dashboard({ session }) {
       if (!error) {
         fetchMealLogs();
       }
+    }
+  };
+
+  const startEditing = (log) => {
+    const t = new Date(log.logged_at);
+    setEditingLogId(log.id);
+    setEditForm({
+      food_name: log.food_name || '',
+      amount: log.amount || '',
+      weight: log.weight || '',
+      time: `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}`,
+    });
+  };
+
+  const handleEditSave = async () => {
+    const parsedTime = parse(editForm.time, 'HH:mm', new Date());
+    const logged_at = parsedTime.toISOString();
+
+    const updateData = {
+      food_name: editForm.food_name,
+      amount: editForm.amount || null,
+      weight: editForm.weight ? parseFloat(editForm.weight.toString().match(/^-?\d+(?:\.\d{0,2})?/)[0]) : null,
+      logged_at,
+    };
+
+    const { error } = await supabase.from('meal_logs').update(updateData).eq('id', editingLogId);
+    if (!error) {
+      setEditingLogId(null);
+      fetchMealLogs();
+    } else {
+      alert('수정 실패: ' + error.message);
     }
   };
 
@@ -254,7 +308,7 @@ export default function Dashboard({ session }) {
                     <Loader2 size={16} className="text-violet-400 animate-spin absolute -bottom-1 -right-1" />
                   </div>
                   <div className="text-center">
-                    <p className="font-bold text-violet-900">AI가 오늘의 식단을 진단하는 중...</p>
+                    <p className="font-bold text-violet-900">AI 간단 전문가가 오늘의 식단을 진단하는 중...</p>
                     <p className="text-sm text-violet-600 mt-1">식사 패턴과 영양 균형을 분석하고 있습니다</p>
                   </div>
                   <div className="flex gap-1 mt-2">
@@ -270,7 +324,7 @@ export default function Dashboard({ session }) {
                 <>
                   <div className="flex items-center gap-2 mb-3">
                     <Sparkles size={18} className="text-indigo-600" />
-                    <h3 className="font-bold text-indigo-900">오늘의 AI 코칭</h3>
+                    <h3 className="font-bold text-indigo-900">오늘의 AI 간단 전문가 피드백</h3>
                   </div>
                   <p className="text-sm text-indigo-950 leading-relaxed whitespace-pre-wrap">
                     {feedbackText}
@@ -298,6 +352,21 @@ export default function Dashboard({ session }) {
             </div>
           )}
 
+          {/* Previous AI Feedback Card — State A/B에서 표시 */}
+          {appState !== 'C' && previousFeedback && (
+            <div className="rounded-3xl p-6 shadow-sm border bg-indigo-50 border-indigo-100 transition-all duration-500">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={18} className="text-indigo-600" />
+                <h3 className="font-bold text-indigo-900">
+                  이전 AI 간단 전문가 피드백 <span className="text-xs font-normal text-indigo-600 ml-1">({format(new Date(previousFeedback.date), 'M월 d일', { locale: ko })})</span>
+                </h3>
+              </div>
+              <p className="text-sm text-indigo-950 leading-relaxed whitespace-pre-wrap">
+                {previousFeedback.text}
+              </p>
+            </div>
+          )}
+
           {/* Meal Input */}
           <div className="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm">
             <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -305,41 +374,53 @@ export default function Dashboard({ session }) {
               식단 기록하기
             </h3>
             <form onSubmit={handleAddMeal} className="flex flex-col gap-3">
-              <input 
-                type="time" 
-                value={timeInput}
-                onChange={(e) => setTimeInput(e.target.value)}
-                className="bg-gray-50 border-none rounded-xl px-4 py-3 md:p-4 text-sm md:text-base font-medium text-gray-700 w-full focus:ring-2 focus:ring-green-500 outline-none"
-              />
-              <input 
-                type="text" 
-                placeholder="음식 이름 및 양 (최대 30자, 예: 바나나 1개, 그릭요거트 200g)" 
-                value={foodInput}
-                onChange={(e) => setFoodInput(e.target.value)}
-                maxLength={30}
-                className="bg-gray-50 border-none rounded-xl px-4 py-3 md:p-4 text-sm md:text-base text-gray-800 w-full focus:ring-2 focus:ring-green-500 outline-none"
-                required
-              />
-              <input 
-                type="text" 
-                placeholder="비고 (최대 30자, 예: 요거트는 무가당으로 섭취 / 운동 후 섭취 등), 선택사항" 
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value)}
-                maxLength={30}
-                className="bg-gray-50 border-none rounded-xl px-4 py-3 md:p-4 text-sm md:text-base text-gray-800 w-full focus:ring-2 focus:ring-green-500 outline-none"
-              />
-              <input 
-                type="number" 
-                step="0.01"
-                inputMode="decimal"
-                placeholder="체중(kg), 선택사항" 
-                value={weightInput}
-                onChange={(e) => setWeightInput(e.target.value)}
-                className="bg-gray-50 border-none rounded-xl px-4 py-3 md:p-4 text-sm md:text-base text-gray-800 w-full focus:ring-2 focus:ring-green-500 outline-none"
-              />
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">식사 시간</label>
+                <input 
+                  type="time" 
+                  value={timeInput}
+                  onChange={(e) => setTimeInput(e.target.value)}
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">음식 이름 <span className="text-red-400">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="예: 바나나 1개, 그릭요거트 200g" 
+                  value={foodInput}
+                  onChange={(e) => setFoodInput(e.target.value)}
+                  maxLength={30}
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none placeholder:text-gray-400"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">비고 <span className="text-gray-300 font-medium">(선택)</span></label>
+                <input 
+                  type="text" 
+                  placeholder="예: 무가당 섭취 / 운동 후 섭취" 
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value)}
+                  maxLength={30}
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none placeholder:text-gray-400"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-500 mb-1 block">체중 <span className="text-gray-300 font-medium">(선택, kg)</span></label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="예: 65.52 (소숫점 2자리까지 반영)" 
+                  value={weightInput}
+                  onChange={(e) => setWeightInput(e.target.value)}
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 w-full focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none placeholder:text-gray-400"
+                />
+              </div>
               <button 
                 type="submit" 
-                className="bg-gray-900 text-white rounded-xl py-4 text-sm md:text-base font-bold mt-2 hover:bg-gray-800 transition-colors"
+                className="bg-green-600 text-white rounded-xl py-4 text-base md:text-lg font-bold mt-1 hover:bg-green-700 transition-colors"
               >
                 기록 추가
               </button>
@@ -351,7 +432,7 @@ export default function Dashboard({ session }) {
         <div className="flex flex-col h-full mt-4">
           <div className="flex justify-between items-end mb-6">
             <div>
-              <h2 className="text-xl font-black text-gray-900">오늘의 식단</h2>
+              <h2 className="text-xl font-black text-gray-900">오늘의 식단 기록</h2>
               <p className="text-sm text-gray-500 mt-1">{format(new Date(), 'M월 d일 eeee', { locale: ko })}</p>
             </div>
           </div>
@@ -368,6 +449,7 @@ export default function Dashboard({ session }) {
               {mealLogs.map((log, index) => {
                 const isFirst = index === 0;
                 const isLast = index === mealLogs.length - 1 && mealLogs.length > 1;
+                const isEditing = editingLogId === log.id;
                 
                 return (
                   <div key={log.id} className="relative">
@@ -378,18 +460,73 @@ export default function Dashboard({ session }) {
                         {isFirst && ' (첫 식사)'}
                         {isLast && ' (마지막 식사)'}
                       </span>
-                      <button onClick={() => handleDelete(log.id)} className="text-gray-300 hover:text-red-500 transition-colors">
-                        <Trash2 size={16} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {isEditing ? (
+                          <>
+                            <button onClick={handleEditSave} className="text-green-500 hover:text-green-700 transition-colors p-0.5">
+                              <Check size={16} />
+                            </button>
+                            <button onClick={() => setEditingLogId(null)} className="text-gray-300 hover:text-gray-500 transition-colors p-0.5">
+                              <X size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEditing(log)} className="text-gray-300 hover:text-blue-500 transition-colors p-0.5">
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => handleDelete(log.id)} className="text-gray-300 hover:text-red-500 transition-colors p-0.5">
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="bg-gray-50 rounded-2xl p-4 mt-2">
-                      <div className="font-bold text-gray-900 text-base">{log.food_name}</div>
-                      {(log.amount || log.weight) && (
-                        <div className="text-sm text-gray-500 mt-1">
-                          {log.amount}{log.amount && log.weight ? ' • ' : ''}{log.weight ? `체중 ${log.weight}kg` : ''}
-                        </div>
-                      )}
-                    </div>
+
+                    {isEditing ? (
+                      <div className="bg-blue-50 rounded-2xl p-4 mt-2 flex flex-col gap-2 border border-blue-200 animate-fade-in">
+                        <input
+                          type="time"
+                          value={editForm.time}
+                          onChange={(e) => setEditForm({...editForm, time: e.target.value})}
+                          className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-blue-400 outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={editForm.food_name}
+                          onChange={(e) => setEditForm({...editForm, food_name: e.target.value})}
+                          placeholder="음식 이름"
+                          maxLength={30}
+                          className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={editForm.amount}
+                          onChange={(e) => setEditForm({...editForm, amount: e.target.value})}
+                          placeholder="비고 (선택)"
+                          maxLength={30}
+                          className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={editForm.weight}
+                          onChange={(e) => setEditForm({...editForm, weight: e.target.value})}
+                          placeholder="체중(kg) (선택)"
+                          className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-2xl p-4 mt-2">
+                        <div className="font-bold text-gray-900 text-base">{log.food_name}</div>
+                        {(log.amount || log.weight) && (
+                          <div className="text-sm text-gray-500 mt-1">
+                            {log.amount}{log.amount && log.weight ? ' • ' : ''}{log.weight ? `체중 ${log.weight}kg` : ''}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
