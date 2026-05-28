@@ -21,8 +21,10 @@ export default function Settings({ session }) {
     await supabase.from('users_profile').update({ eating_window: newVal }).eq('id', session.user.id);
   };
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    alert("로그아웃 되었습니다.");
+    if (window.confirm("정말 로그아웃 하시겠습니까?")) {
+      await supabase.auth.signOut();
+      alert("로그아웃 되었습니다.");
+    }
   };
 
   const handleReset = async () => {
@@ -76,7 +78,7 @@ export default function Settings({ session }) {
           <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
             <button 
               onClick={handleReset}
-              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-100 text-red-600"
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-200 text-red-600"
             >
               <div className="flex items-center gap-3">
                 <Trash2 size={20} />

@@ -192,9 +192,11 @@ export default function Dashboard({ session }) {
   };
 
   const handleDelete = async (id) => {
-    const { error } = await supabase.from('meal_logs').delete().eq('id', id);
-    if (!error) {
-      fetchMealLogs();
+    if (window.confirm("정말 이 식단 기록을 삭제하시겠습니까?")) {
+      const { error } = await supabase.from('meal_logs').delete().eq('id', id);
+      if (!error) {
+        fetchMealLogs();
+      }
     }
   };
 
@@ -347,7 +349,7 @@ export default function Dashboard({ session }) {
 
           {/* Timeline View */}
           <div className="flex-1">
-            <div className="relative pl-4 border-l-2 border-gray-100 flex flex-col gap-8 pb-8">
+            <div className="relative pl-4 border-l-2 border-gray-200 flex flex-col gap-8 pb-8">
               {mealLogs.length === 0 && (
                 <div className="text-sm text-gray-400 font-medium py-10 text-center">
                   아직 기록된 식단이 없습니다.
