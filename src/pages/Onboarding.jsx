@@ -3,6 +3,7 @@ import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { upsertGuestProfile } from '../lib/guestStorage';
 import { AlertCircle, BookOpen, ChevronRight, Info } from 'lucide-react';
+import SEO from '../components/SEO';
 
 export default function Onboarding({ session, onGuestStart }) {
   const [eatingWindow, setEatingWindow] = useState(8);
@@ -43,11 +44,17 @@ export default function Onboarding({ session, onGuestStart }) {
   };
 
   return (
+    <>
+    <SEO 
+      title="시작하기" 
+      description="간단하게 간단하자! 복잡한 다이어트는 그만, 직관적이고 스마트한 간헐적 단식 기록을 지금 바로 시작하세요." 
+      url="/onboarding" 
+    />
     <div className="h-full flex flex-col justify-center px-4 md:px-6 py-6 md:py-12 max-w-[390px] mx-auto md:max-w-md w-full flex-1">
       <div className="flex-1 flex flex-col justify-center">
         {/* Hide title on mobile since Layout header shows it */}
         <div className="hidden md:block mb-10 text-center">
-          <h1 className="text-3xl font-black text-gray-900 mb-3 tracking-tight">간단하게 간단하자</h1>
+          <h1 className="text-3xl font-black text-gray-900 mb-3 tracking-tight">간단하게 간단하자: <span className="text-green-500">EASY IF</span></h1>
           <p className="text-gray-500 font-medium">간단한 간헐적 단식 도우미</p>
         </div>
 
@@ -121,7 +128,9 @@ export default function Onboarding({ session, onGuestStart }) {
           <ChevronRight size={18} className="text-green-600/70 group-hover:translate-x-0.5 transition-transform shrink-0" />
         </Link>
 
-        <p className="text-xs text-center text-gray-400 mt-4">가입 시 서비스 이용약관에 동의하게 됩니다.</p>
+        <p className="text-xs text-center text-gray-400 mt-4 leading-relaxed">
+          가입 시 <Link to="/terms" className="underline hover:text-gray-600">서비스 이용약관</Link> 및 <Link to="/privacy" className="underline hover:text-gray-600">개인정보처리방침</Link>에 동의하게 됩니다.
+        </p>
       </div>
 
       {/* Guest Warning Modal */}
@@ -175,5 +184,6 @@ export default function Onboarding({ session, onGuestStart }) {
         </div>
       )}
     </div>
+    </>
   );
 }

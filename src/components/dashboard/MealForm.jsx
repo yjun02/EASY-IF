@@ -20,8 +20,10 @@ export default function MealForm({
       </h3>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div>
-          <label className="text-xs font-bold text-gray-500 mb-1 block">식사 시간</label>
+          <label htmlFor="timeInput" className="text-xs font-bold text-gray-500 mb-1 block">식사 시간</label>
           <input 
+            id="timeInput"
+            name="timeInput"
             type="time" 
             value={timeInput}
             onChange={(e) => setTimeInput(e.target.value)}
@@ -29,8 +31,10 @@ export default function MealForm({
           />
         </div>
         <div>
-          <label className="text-xs font-bold text-gray-500 mb-1 block">음식 이름 <span className="text-red-400">*</span></label>
+          <label htmlFor="foodInput" className="text-xs font-bold text-gray-500 mb-1 block">음식 이름 <span className="text-red-400">*</span></label>
           <input 
+            id="foodInput"
+            name="foodInput"
             type="text" 
             placeholder="예: 바나나 1개, 그릭요거트 200g" 
             value={foodInput}
@@ -41,8 +45,10 @@ export default function MealForm({
           />
         </div>
         <div>
-          <label className="text-xs font-bold text-gray-500 mb-1 block">비고 <span className="text-gray-300 font-medium">(선택)</span></label>
+          <label htmlFor="amountInput" className="text-xs font-bold text-gray-500 mb-1 block">비고 <span className="text-gray-300 font-medium">(선택)</span></label>
           <input 
+            id="amountInput"
+            name="amountInput"
             type="text" 
             placeholder="예: 무가당 섭취 / 운동 후 섭취" 
             value={amountInput}
@@ -52,8 +58,10 @@ export default function MealForm({
           />
         </div>
         <div>
-          <label className="text-xs font-bold text-gray-500 mb-1 block">체중 <span className="text-gray-300 font-medium">(선택, kg)</span></label>
+          <label htmlFor="weightInput" className="text-xs font-bold text-gray-500 mb-1 block">체중 <span className="text-gray-300 font-medium">(선택, kg)</span></label>
           <input 
+            id="weightInput"
+            name="weightInput"
             type="number" 
             step="0.01"
             inputMode="decimal"

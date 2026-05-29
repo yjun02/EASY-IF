@@ -1,8 +1,15 @@
 import { Link } from 'react-router-dom';
 import { Clock, Utensils, BarChart3, Sparkles, ArrowRight, BookOpen, Timer, Target } from 'lucide-react';
+import SEO from '../components/SEO';
 
 export default function About() {
   return (
+    <>
+    <SEO 
+      title="서비스 소개" 
+      description="복잡한 칼로리 계산은 그만. 먹은 것을 기록하고 정해진 시간만 지키세요. 당신의 건강한 간헐적 단식 라이프스타일을 위한 도우미, 간단하게 간단하자(Easy IF)를 소개합니다." 
+      url="/about" 
+    />
     <div className="flex flex-col h-full bg-white w-full">
       <div className="p-4 md:p-8 flex-1">
 
@@ -111,5 +118,6 @@ export default function About() {
 
       </div>
     </div>
+    </>
   );
 }

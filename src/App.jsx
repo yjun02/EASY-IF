@@ -6,9 +6,12 @@ import Settings from './pages/Settings';
 import History from './pages/History';
 import Guide from './pages/Guide';
 import About from './pages/About';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 import Layout from './components/Layout';
 import { supabase } from './lib/supabase';
 import { isGuestSession, startGuestSession, endGuestSession } from './lib/guestStorage';
+import { HelmetProvider } from 'react-helmet-async';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -59,8 +62,9 @@ function App() {
   const hasAccess = isLoggedIn || isGuest;
 
   return (
-    <BrowserRouter>
-      <Routes>
+    <HelmetProvider>
+      <BrowserRouter>
+        <Routes>
         <Route path="/" element={<Layout isLoggedIn={isLoggedIn} isGuest={isGuest} hasAccess={hasAccess} />}>
           <Route index element={
             hasAccess
@@ -77,6 +81,8 @@ function App() {
           } />
           <Route path="guide" element={<Guide />} />
           <Route path="about" element={<About />} />
+          <Route path="privacy" element={<Privacy />} />
+          <Route path="terms" element={<Terms />} />
           <Route path="settings" element={
             hasAccess
               ? <Settings session={session} isGuest={isGuest} onGuestEnd={handleGuestEnd} />
@@ -85,6 +91,7 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </HelmetProvider>
   );
 }
 

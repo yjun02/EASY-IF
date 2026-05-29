@@ -19,6 +19,7 @@ import StatusCard from '../components/dashboard/StatusCard';
 import AiFeedbackCard from '../components/dashboard/AiFeedbackCard';
 import MealForm from '../components/dashboard/MealForm';
 import ActiveCycleTimeline from '../components/dashboard/ActiveCycleTimeline';
+import SEO from '../components/SEO';
 
 export default function Dashboard({ session, isGuest }) {
   const [eatingWindow, setEatingWindow] = useState(8); 
@@ -162,12 +163,24 @@ export default function Dashboard({ session, isGuest }) {
             is_success: fastingHours >= targetFasting,
           });
         } else {
-          supabase.from('daily_summaries').upsert({
-            user_id: session.user.id,
-            date: prevCycleDate,
-            actual_fasting_hours: Math.round(fastingHours * 10) / 10,
-            is_success: fastingHours >= targetFasting,
-          }, { onConflict: 'user_id,date' }).then();
+          // 이미 해당 날짜에 요약이 있으면 skip, 없을 때만 insert
+          (async () => {
+            const { data: existing } = await supabase
+              .from('daily_summaries')
+              .select('id')
+              .eq('user_id', session.user.id)
+              .eq('date', prevCycleDate)
+              .maybeSingle();
+
+            if (!existing) {
+              await supabase.from('daily_summaries').insert({
+                user_id: session.user.id,
+                date: prevCycleDate,
+                actual_fasting_hours: Math.round(fastingHours * 10) / 10,
+                is_success: fastingHours >= targetFasting,
+              });
+            }
+          })();
         }
       }
 
@@ -448,6 +461,12 @@ export default function Dashboard({ session, isGuest }) {
   }
 
   return (
+    <>
+    <SEO 
+      title="대시보드" 
+      description="나의 간헐적 단식 상태와 식단 기록을 한눈에 확인하세요. 실시간 타이머와 AI 전문가 피드백이 당신의 다이어트를 돕습니다." 
+      url="/" 
+    />
     <div className="flex flex-col h-full bg-white relative">
       <div className="flex-1 flex flex-col gap-6 p-4 md:p-6 max-w-2xl mx-auto w-full">
         
@@ -502,5 +521,6 @@ export default function Dashboard({ session, isGuest }) {
 
       </div>
     </div>
+    </>
   );
 }

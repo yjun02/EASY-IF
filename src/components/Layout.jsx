@@ -3,7 +3,12 @@ import { Home, Settings as SettingsIcon, Calendar, BookOpen, Info, Play } from '
 
 const FooterContent = () => (
   <div className="text-center md:text-left text-xs text-gray-400 font-medium">
-    <p>© {new Date().getFullYear()} 간단하게 간단하자.</p>
+    <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
+      <Link to="/terms" className="hover:text-gray-600 transition-colors">서비스 이용약관</Link>
+      <span className="text-gray-300">|</span>
+      <Link to="/privacy" className="hover:text-gray-600 transition-colors font-bold">개인정보처리방침</Link>
+    </div>
+    <p>© {new Date().getFullYear()} 간단하게 간단하자: EASY IF</p>
     <p className="mt-1">
       Developed by <a href="https://github.com/yjun02" target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-green-600 transition-colors font-bold underline underline-offset-2">yjun02(Github)</a>
     </p>
@@ -19,8 +24,7 @@ export default function Layout({ isLoggedIn, isGuest, hasAccess }) {
       {/* Desktop Floating Sidebar — 독립된 구역 카드 */}
       <aside className="hidden md:flex flex-col w-56 bg-white border border-gray-100 rounded-3xl p-6 shadow-sm shrink-0 sticky top-4 h-[calc(100vh-32px)]">
         <div className="mb-10 text-center md:text-left">
-          <h1 className="text-xl font-black text-gray-900 tracking-tight">간단하게 간단하자</h1>
-          <p className="text-xs font-bold text-green-600 tracking-widest mt-0.5 uppercase">Easy IF</p>
+          <h1 className="text-xl font-black text-gray-900 tracking-tight">간단하게 간단하자: <span className="text-green-600">EASY IF</span></h1>
         </div>
         
         <nav className="flex flex-col gap-2.5">
@@ -73,7 +77,7 @@ export default function Layout({ isLoggedIn, isGuest, hasAccess }) {
         {/* Mobile Header — 높이를 줄이고 한 줄로 통합 */}
         <header className="md:hidden pt-4 pb-2.5 flex items-center justify-center bg-white border-b border-gray-50 shrink-0">
           <h1 className="text-sm font-bold text-gray-800 tracking-tight">
-            간단하게 간단하자, Easy IF
+            간단하게 간단하자: EASY IF
           </h1>
         </header>
 

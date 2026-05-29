@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, TrendingDown, BarChart3, Loader2, CheckCircle2, XCircle, Sparkles, Scale, UtensilsCrossed, X } from 'lucide-react';
+import SEO from '../components/SEO';
 import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays, subMonths, subYears } from 'date-fns';
 import { ko } from 'date-fns/locale';
@@ -249,8 +250,14 @@ export default function History({ session, isGuest }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6 max-w-3xl mx-auto w-full">
-      <div className="md:bg-white md:rounded-3xl md:shadow-sm md:p-8 flex-1">
+    <>
+    <SEO 
+      title="기록" 
+      description="나의 간헐적 단식 기록과 체중 변화 추이를 캘린더와 차트로 한눈에 확인하세요." 
+      url="/history" 
+    />
+    <div className="flex flex-col h-full bg-white w-full">
+      <div className="p-4 md:p-8 flex-1">
         
         {/* Header with toggle */}
         <div className="flex justify-between items-center mb-6">
@@ -568,5 +575,6 @@ export default function History({ session, isGuest }) {
         )}
       </div>
     </div>
+    </>
   );
 }

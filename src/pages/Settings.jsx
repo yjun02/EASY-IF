@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { LogOut, Trash2, Clock, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
+import SEO from '../components/SEO';
 import { differenceInHours, addHours, format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '../lib/supabase';
@@ -122,8 +123,14 @@ export default function Settings({ session, isGuest, onGuestEnd }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white md:bg-gray-50 p-4 md:p-6 w-full">
-      <div className="max-w-2xl w-full mx-auto md:bg-white md:rounded-3xl md:shadow-sm md:p-8 md:min-h-[80vh]">
+    <>
+    <SEO 
+      title="설정" 
+      description="간헐적 단식 목표 시간을 설정하고 내 데이터를 관리하세요." 
+      url="/settings" 
+    />
+    <div className="flex flex-col h-full bg-white w-full">
+      <div className="p-4 md:p-8 flex-1">
         <h2 className="text-2xl font-black text-gray-900 mb-8">설정</h2>
         
         {/* Profile / Goal Setting */}
@@ -135,13 +142,15 @@ export default function Settings({ session, isGuest, onGuestEnd }) {
                 <div className="bg-white p-2 rounded-xl shadow-sm">
                   <Clock size={20} className="text-green-600" />
                 </div>
-                <div>
+                <label htmlFor="eatingWindowSelect" className="block">
                   <div className="font-bold text-gray-900">식사 가능 시간</div>
                   <div className="text-xs text-gray-500">현재 {eatingWindow}시간 (공복 {24 - eatingWindow}시간)</div>
-                </div>
+                </label>
               </div>
               <div className="flex items-center gap-2">
                 <select 
+                  id="eatingWindowSelect"
+                  name="eatingWindowSelect"
                   value={eatingWindow} 
                   onChange={handleEatingWindowChange}
                   disabled={!canUpdate}
@@ -201,5 +210,6 @@ export default function Settings({ session, isGuest, onGuestEnd }) {
         </div>
       </div>
     </div>
+    </>
   );
 }

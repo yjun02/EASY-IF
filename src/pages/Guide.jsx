@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Info, Target, Flame, Heart, BookOpen, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
+import SEO from '../components/SEO';
 
 const AccordionItem = ({ title, icon, children, isOpen, onClick }) => {
   return (
-    <section className="bg-white rounded-3xl border border-gray-150 overflow-hidden mb-4 shadow-sm">
+    <section className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-4 shadow-sm">
       <button
         onClick={onClick}
-        className="w-full flex items-center justify-between p-5 text-left bg-white hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between p-5 text-left bg-white hover:bg-gray-100 transition-colors cursor-pointer"
       >
         <h3 className="text-lg font-bold text-gray-900 flex items-center gap-3">
           {icon}
@@ -42,6 +43,12 @@ export default function Guide() {
   };
 
   return (
+    <>
+    <SEO 
+      title="간헐적 단식 가이드" 
+      description="개발자가 3개월간 10kg을 감량하며 겪은 간헐적 단식의 핵심 원리와 필수 규칙을 알려드립니다. 올바른 방법으로 건강하게 체중을 감량해보세요." 
+      url="/guide" 
+    />
     <div className="flex flex-col h-full bg-white w-full">
       <div className="p-4 md:p-8 flex-1">
         <h2 className="text-2xl font-black text-gray-900 mb-6 flex items-center gap-2">
@@ -258,5 +265,6 @@ export default function Guide() {
         </div>
       </div>
     </div>
+    </>
   );
 }
