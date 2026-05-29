@@ -5,16 +5,26 @@ import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
 import History from './pages/History';
 import Guide from './pages/Guide';
+import About from './pages/About';
 import Layout from './components/Layout';
 import { supabase } from './lib/supabase';
+import { isGuestSession, startGuestSession, endGuestSession } from './lib/guestStorage';
 
 function App() {
   const [session, setSession] = useState(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      // 구글 로그인 세션이 있으면 게스트 모드 해제
+      if (session) {
+        setIsGuest(false);
+        endGuestSession();
+      } else {
+        setIsGuest(isGuestSession());
+      }
       setLoading(false);
     });
 
@@ -22,29 +32,55 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) {
+        setIsGuest(false);
+        endGuestSession();
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleGuestStart = () => {
+    startGuestSession();
+    setIsGuest(true);
+  };
+
+  const handleGuestEnd = () => {
+    endGuestSession();
+    setIsGuest(false);
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
+  const isLoggedIn = !!session;
+  const hasAccess = isLoggedIn || isGuest;
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Layout />}>
+        <Route path="/" element={<Layout isLoggedIn={isLoggedIn} isGuest={isGuest} hasAccess={hasAccess} />}>
           <Route index element={
-            session ? <Dashboard session={session} /> : <Navigate to="/onboarding" replace />
+            hasAccess
+              ? <Dashboard session={session} isGuest={isGuest} />
+              : <Navigate to="/onboarding" replace />
           } />
-          <Route path="onboarding" element={<Onboarding session={session} />} />
+          <Route path="onboarding" element={
+            <Onboarding session={session} onGuestStart={handleGuestStart} />
+          } />
           <Route path="history" element={
-            session ? <History session={session} /> : <Navigate to="/onboarding" replace />
+            hasAccess
+              ? <History session={session} isGuest={isGuest} />
+              : <Navigate to="/onboarding" replace />
           } />
           <Route path="guide" element={<Guide />} />
+          <Route path="about" element={<About />} />
           <Route path="settings" element={
-            session ? <Settings session={session} /> : <Navigate to="/onboarding" replace />
+            hasAccess
+              ? <Settings session={session} isGuest={isGuest} onGuestEnd={handleGuestEnd} />
+              : <Navigate to="/onboarding" replace />
           } />
         </Route>
       </Routes>

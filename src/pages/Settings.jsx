@@ -3,8 +3,13 @@ import { LogOut, Trash2, Clock, ChevronRight, AlertCircle, Loader2 } from 'lucid
 import { differenceInHours, addHours, format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { supabase } from '../lib/supabase';
+import { 
+  getGuestProfile, 
+  upsertGuestProfile, 
+  resetGuestData 
+} from '../lib/guestStorage';
 
-export default function Settings({ session }) {
+export default function Settings({ session, isGuest, onGuestEnd }) {
   const [eatingWindow, setEatingWindow] = useState(8);
   const [canUpdate, setCanUpdate] = useState(true);
   const [nextUpdateTime, setNextUpdateTime] = useState(null);
@@ -13,7 +18,18 @@ export default function Settings({ session }) {
   useEffect(() => {
     async function loadProfile() {
       setIsInitializing(true);
-      if (session?.user) {
+      if (isGuest) {
+        const profile = getGuestProfile() || { eating_window: 8 };
+        setEatingWindow(profile.eating_window);
+        if (profile.last_window_update) {
+          const lastTime = new Date(profile.last_window_update);
+          const hoursSince = differenceInHours(new Date(), lastTime);
+          if (hoursSince < 24) {
+            setCanUpdate(false);
+            setNextUpdateTime(addHours(lastTime, 24));
+          }
+        }
+      } else if (session?.user) {
         const { data } = await supabase.from('users_profile').select('*').eq('id', session.user.id).single();
         if (data) {
           setEatingWindow(data.eating_window);
@@ -30,7 +46,7 @@ export default function Settings({ session }) {
       setIsInitializing(false);
     }
     loadProfile();
-  }, [session]);
+  }, [session, isGuest]);
 
   const handleEatingWindowChange = async (e) => {
     if (!window.confirm("식사 가능 시간을 변경하시겠습니까? 한 번 변경하면 24시간 동안 다시 변경할 수 없습니다.\n(단식이 리듬을 잃지 않도록 잦은 변경을 제한하고 있습니다.)")) {
@@ -40,36 +56,59 @@ export default function Settings({ session }) {
     const newVal = Number(e.target.value);
     const now = new Date().toISOString();
     
-    // DB 업데이트
-    const { error } = await supabase.from('users_profile').update({ 
-      eating_window: newVal,
-      last_window_update: now
-    }).eq('id', session.user.id);
-
-    if (!error) {
+    if (isGuest) {
+      upsertGuestProfile({ 
+        eating_window: newVal,
+        last_window_update: now
+      });
       setEatingWindow(newVal);
       setCanUpdate(false);
       setNextUpdateTime(addHours(new Date(now), 24));
     } else {
-      alert("업데이트 중 오류가 발생했습니다. (last_window_update 컬럼 추가가 필요할 수 있습니다)");
+      // DB 업데이트
+      const { error } = await supabase.from('users_profile').update({ 
+        eating_window: newVal,
+        last_window_update: now
+      }).eq('id', session.user.id);
+
+      if (!error) {
+        setEatingWindow(newVal);
+        setCanUpdate(false);
+        setNextUpdateTime(addHours(new Date(now), 24));
+      } else {
+        alert("업데이트 중 오류가 발생했습니다. (last_window_update 컬럼 추가가 필요할 수 있습니다)");
+      }
     }
   };
+
   const handleLogout = async () => {
-    if (window.confirm("정말 로그아웃 하시겠습니까?")) {
-      await supabase.auth.signOut();
-      alert("로그아웃 되었습니다.");
+    if (isGuest) {
+      if (window.confirm("게스트 모드를 종료하시겠습니까? 종료하시면 현재 브라우저에 임시 저장된 모든 기록이 삭제되며 복구할 수 없습니다.")) {
+        onGuestEnd();
+        alert("게스트 세션이 종료되었습니다.");
+      }
+    } else {
+      if (window.confirm("정말 로그아웃 하시겠습니까?")) {
+        await supabase.auth.signOut();
+        alert("로그아웃 되었습니다.");
+      }
     }
   };
 
   const handleReset = async () => {
     if(window.confirm("정말 모든 기록을 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
-      const { error: mealError } = await supabase.from('meal_logs').delete().eq('user_id', session.user.id);
-      const { error: sumError } = await supabase.from('daily_summaries').delete().eq('user_id', session.user.id);
-      
-      if (!mealError && !sumError) {
-        alert("모든 기록이 초기화되었습니다.");
+      if (isGuest) {
+        resetGuestData();
+        alert("모든 로컬 기록이 초기화되었습니다.");
       } else {
-        alert("초기화 중 오류가 발생했습니다.");
+        const { error: mealError } = await supabase.from('meal_logs').delete().eq('user_id', session.user.id);
+        const { error: sumError } = await supabase.from('daily_summaries').delete().eq('user_id', session.user.id);
+        
+        if (!mealError && !sumError) {
+          alert("모든 기록이 초기화되었습니다.");
+        } else {
+          alert("초기화 중 오류가 발생했습니다.");
+        }
       }
     }
   };
@@ -153,8 +192,8 @@ export default function Settings({ session }) {
               className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-gray-700"
             >
               <div className="flex items-center gap-3">
-                <LogOut size={20} />
-                <span className="font-bold">로그아웃</span>
+                <LogOut size={20} className="text-gray-500" />
+                <span className="font-bold">{isGuest ? '게스트 세션 종료 및 기록 삭제' : '로그아웃'}</span>
               </div>
               <ChevronRight size={20} className="opacity-50" />
             </button>

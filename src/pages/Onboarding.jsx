@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { upsertGuestProfile } from '../lib/guestStorage';
+import { AlertCircle, BookOpen } from 'lucide-react';
 
-export default function Onboarding({ session }) {
+export default function Onboarding({ session, onGuestStart }) {
   const [eatingWindow, setEatingWindow] = useState(8);
   const [loading, setLoading] = useState(false);
+  const [showGuestWarning, setShowGuestWarning] = useState(false);
+  const navigate = useNavigate();
 
   // If already logged in, go to dashboard
   if (session) {
@@ -30,6 +34,12 @@ export default function Onboarding({ session }) {
       alert('로그인에 실패했습니다.');
       setLoading(false);
     }
+  };
+
+  const handleGuestConfirm = () => {
+    upsertGuestProfile({ eating_window: eatingWindow });
+    onGuestStart();
+    navigate('/');
   };
 
   return (
@@ -87,8 +97,77 @@ export default function Onboarding({ session }) {
         >
           {loading ? '연결 중...' : '구글 계정으로 시작하기'}
         </button>
+
+        <button 
+          onClick={() => setShowGuestWarning(true)}
+          className="w-full bg-white text-gray-600 font-bold text-base py-3.5 rounded-2xl mt-3 hover:bg-gray-50 transition-colors border border-gray-200"
+        >
+          게스트로 시작하기
+        </button>
+
+        <div className="flex items-center justify-center mt-4">
+          <Link 
+            to="/about" 
+            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-green-600 transition-colors font-medium"
+          >
+            <BookOpen size={14} />
+            이 서비스가 궁금하신가요?
+          </Link>
+        </div>
+
         <p className="text-xs text-center text-gray-400 mt-4">가입 시 서비스 이용약관에 동의하게 됩니다.</p>
       </div>
+
+      {/* Guest Warning Modal */}
+      {showGuestWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-fade-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-amber-100 p-2 rounded-xl">
+                <AlertCircle size={24} className="text-amber-600" />
+              </div>
+              <h3 className="font-black text-gray-900 text-lg">게스트 모드 안내</h3>
+            </div>
+            
+            <div className="space-y-3 mb-6">
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p className="text-sm text-amber-900 leading-relaxed font-medium">
+                  게스트 모드에서는 모든 데이터가 <strong>현재 브라우저의 로컬 저장소</strong>에만 저장됩니다.
+                </p>
+              </div>
+              <ul className="space-y-2 text-sm text-gray-600 px-1">
+                <li className="flex gap-2">
+                  <span className="text-red-400 font-bold shrink-0">✕</span>
+                  <span>다른 기기에서 데이터 연동 불가</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-red-400 font-bold shrink-0">✕</span>
+                  <span>AI 간단 전문가 피드백 이용 불가</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="text-red-400 font-bold shrink-0">✕</span>
+                  <span>브라우저 데이터 삭제 시 기록 영구 소실</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={handleGuestConfirm}
+                className="w-full bg-gray-900 text-white font-bold py-3 rounded-xl hover:bg-gray-800 transition-colors"
+              >
+                이해했어요, 게스트로 시작
+              </button>
+              <button 
+                onClick={() => setShowGuestWarning(false)}
+                className="w-full bg-gray-100 text-gray-600 font-bold py-3 rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

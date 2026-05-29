@@ -4,8 +4,15 @@ import { supabase } from '../lib/supabase';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, subDays, subMonths, subYears } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { 
+  getAllGuestMealLogs, 
+  getGuestSummariesForMonth, 
+  getGuestWeightData, 
+  getGuestMealLogsForDate, 
+  getGuestSummaryForDate 
+} from '../lib/guestStorage';
 
-export default function History({ session }) {
+export default function History({ session, isGuest }) {
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'weight'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [summaries, setSummaries] = useState([]);
@@ -27,22 +34,28 @@ export default function History({ session }) {
 
   useEffect(() => {
     async function fetchFirstLog() {
-      const { data: firstMealData } = await supabase
-        .from('meal_logs')
-        .select('logged_at')
-        .eq('user_id', session.user.id)
-        .order('logged_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      
-      if (firstMealData) {
-        setFirstLogDate(format(new Date(firstMealData.logged_at), 'yyyy-MM-dd'));
+      if (isGuest) {
+        const allLogs = getAllGuestMealLogs();
+        if (allLogs.length > 0) {
+          const sorted = allLogs.sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at));
+          setFirstLogDate(format(new Date(sorted[0].logged_at), 'yyyy-MM-dd'));
+        }
+      } else if (session?.user) {
+        const { data: firstMealData } = await supabase
+          .from('meal_logs')
+          .select('logged_at')
+          .eq('user_id', session.user.id)
+          .order('logged_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        
+        if (firstMealData) {
+          setFirstLogDate(format(new Date(firstMealData.logged_at), 'yyyy-MM-dd'));
+        }
       }
     }
-    if (session?.user) {
-      fetchFirstLog();
-    }
-  }, [session]);
+    fetchFirstLog();
+  }, [session, isGuest]);
 
   useEffect(() => {
     async function load() {
@@ -57,45 +70,68 @@ export default function History({ session }) {
       setIsInitializing(false);
     }
     load();
-  }, [currentDate, weightPeriod, customStart, customEnd, session, viewMode]);
+  }, [currentDate, weightPeriod, customStart, customEnd, session, viewMode, isGuest]);
 
   const loadCalendarData = async (autoSelect = false) => {
     const start = format(startOfMonth(currentDate), 'yyyy-MM-dd');
     const end = format(endOfMonth(currentDate), 'yyyy-MM-dd');
     
-    const { data } = await supabase
-      .from('daily_summaries')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .gte('date', start)
-      .lte('date', end);
-      
-    if (data) {
+    if (isGuest) {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const data = getGuestSummariesForMonth(year, month);
       setSummaries(data);
-      // Auto-select today
       if (autoSelect) {
         const today = new Date();
         setTimeout(() => handleDayClick(today), 0);
+      }
+    } else if (session?.user) {
+      const { data } = await supabase
+        .from('daily_summaries')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .gte('date', start)
+        .lte('date', end);
+        
+      if (data) {
+        setSummaries(data);
+        // Auto-select today
+        if (autoSelect) {
+          const today = new Date();
+          setTimeout(() => handleDayClick(today), 0);
+        }
       }
     }
   };
 
   const loadWeightData = async () => {
     const { startDate } = getDateRange();
+    let data = [];
     
-    // meal_logs에서 체중이 기록된 행만 가져오기
-    let query = supabase
-      .from('meal_logs')
-      .select('logged_at, weight')
-      .eq('user_id', session.user.id)
-      .not('weight', 'is', null)
-      .order('logged_at', { ascending: true });
+    if (isGuest) {
+      const allWeights = getGuestWeightData();
+      if (startDate) {
+        const limitDate = new Date(startDate);
+        data = allWeights.filter(w => new Date(w.logged_at) >= limitDate);
+      } else {
+        data = allWeights;
+      }
+    } else if (session?.user) {
+      // meal_logs에서 체중이 기록된 행만 가져오기
+      let query = supabase
+        .from('meal_logs')
+        .select('logged_at, weight')
+        .eq('user_id', session.user.id)
+        .not('weight', 'is', null)
+        .order('logged_at', { ascending: true });
 
-    if (startDate) {
-      query = query.gte('logged_at', startDate);
+      if (startDate) {
+        query = query.gte('logged_at', startDate);
+      }
+
+      const { data: dbData } = await query;
+      data = dbData || [];
     }
-
-    const { data } = await query;
     
     if (data && data.length > 0) {
       // 날짜별 최저 체중만 추출
@@ -163,25 +199,32 @@ export default function History({ session }) {
     setSelectedDate(day);
     setDayDetailLoading(true);
 
-    // Fetch meals for that day
-    const { data: meals } = await supabase
-      .from('meal_logs')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .gte('logged_at', `${dateStr}T00:00:00+09:00`)
-      .lt('logged_at', `${dateStr}T23:59:59+09:00`)
-      .order('logged_at', { ascending: true });
+    if (isGuest) {
+      const meals = getGuestMealLogsForDate(dateStr);
+      const summary = getGuestSummaryForDate(dateStr);
+      setDayDetail({ meals: meals || [], summary });
+      setDayDetailLoading(false);
+    } else if (session?.user) {
+      // Fetch meals for that day
+      const { data: meals } = await supabase
+        .from('meal_logs')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .gte('logged_at', `${dateStr}T00:00:00+09:00`)
+        .lt('logged_at', `${dateStr}T23:59:59+09:00`)
+        .order('logged_at', { ascending: true });
 
-    // Fetch summary for that day
-    const { data: summary } = await supabase
-      .from('daily_summaries')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .eq('date', dateStr)
-      .maybeSingle();
+      // Fetch summary for that day
+      const { data: summary } = await supabase
+        .from('daily_summaries')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .eq('date', dateStr)
+        .maybeSingle();
 
-    setDayDetail({ meals: meals || [], summary });
-    setDayDetailLoading(false);
+      setDayDetail({ meals: meals || [], summary });
+      setDayDetailLoading(false);
+    }
   };
 
   const avgWeight = weightData.length > 0 
@@ -382,8 +425,8 @@ export default function History({ session }) {
                       <p className="text-sm text-gray-400 text-center py-4 font-medium">이 날에는 식단 기록이 없습니다.</p>
                     )}
 
-                    {/* AI Feedback */}
-                    {dayDetail.summary?.ai_feedback && (
+                    {/* AI Feedback (게스트 모드에서는 AI 피드백 미노출) */}
+                    {!isGuest && dayDetail.summary?.ai_feedback && (
                       <div className="bg-indigo-50 rounded-xl px-4 py-4 border border-indigo-100">
                         <div className="flex items-center gap-2 mb-2">
                           <Sparkles size={16} className="text-indigo-500" />
