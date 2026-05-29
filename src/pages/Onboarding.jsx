@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { upsertGuestProfile } from '../lib/guestStorage';
-import { AlertCircle, BookOpen } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, Info } from 'lucide-react';
 
 export default function Onboarding({ session, onGuestStart }) {
   const [eatingWindow, setEatingWindow] = useState(8);
@@ -105,15 +105,21 @@ export default function Onboarding({ session, onGuestStart }) {
           게스트로 시작하기
         </button>
 
-        <div className="flex items-center justify-center mt-4">
-          <Link 
-            to="/about" 
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-green-600 transition-colors font-medium"
-          >
-            <BookOpen size={14} />
-            이 서비스가 궁금하신가요?
-          </Link>
-        </div>
+        <Link 
+          to="/about" 
+          className="mt-8 bg-green-50 border border-green-100 rounded-2xl p-4 flex items-center justify-between shadow-sm hover:bg-green-100/60 transition-colors cursor-pointer group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="bg-white p-2 rounded-xl shadow-sm text-green-600 shrink-0">
+              <Info size={20} />
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-bold text-gray-800">이 서비스가 궁금하신가요?</div>
+              <div className="text-xs text-gray-500 mt-0.5 font-medium">사용 가이드와 서비스 소개 확인하기</div>
+            </div>
+          </div>
+          <ChevronRight size={18} className="text-green-600/70 group-hover:translate-x-0.5 transition-transform shrink-0" />
+        </Link>
 
         <p className="text-xs text-center text-gray-400 mt-4">가입 시 서비스 이용약관에 동의하게 됩니다.</p>
       </div>
