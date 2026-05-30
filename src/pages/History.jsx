@@ -405,24 +405,24 @@ export default function History({ session, isGuest }) {
                   const hasFailure = daySummaries.some(s => !s.is_success);
                   
                   // 1. 스타일 변수 초기화
-                  let cellClass = 'border-gray-100 bg-white hover:border-gray-200';
+                  let cellClass = 'border-2 border-gray-200 bg-white hover:border-gray-300';
                   
                   // 2. 조건별 스타일 할당 (선택 상태 및 실패 여부 반영)
                   if (isSelected) {
                     if (hasFailure) {
-                      // 실패 항목이 있으면서 선택된 경우: 붉은색 강조 스타일
-                      cellClass = 'border-red-500 scale-105 z-10 ring-2 ring-orange-200 bg-orange-50';
+                      // 실패 항목이 있으면서 선택된 경우: 주황색 강조 스타일
+                      cellClass = 'border-2 border-orange-500 scale-105 z-10 ring-2 ring-orange-200 bg-orange-50';
                     } else {
                       // 성공 혹은 일반 항목이면서 선택된 경우: 기존 초록색 강조 스타일
-                      cellClass = 'border-green-500 scale-105 z-10 ring-2 ring-green-300 bg-green-50';
+                      cellClass = 'border-2 border-green-500 scale-105 z-10 ring-2 ring-green-300 bg-green-50';
                     }
                   } else if (hasSummaries || isActiveCycleDay) {
                     if (hasFailure) {
-                      cellClass = 'border-red-200 bg-red-50 hover:border-red-300';
+                      cellClass = 'border-2 border-orange-200 bg-orange-50 hover:border-orange-400';
                     } else if (!hasSummaries && isActiveCycleDay) {
-                      cellClass = 'border-gray-200 bg-gray-50 hover:border-gray-300';
+                      cellClass = 'border-2 border-gray-200 bg-gray-50 hover:border-gray-400';
                     } else {
-                      cellClass = 'border-green-200 bg-green-50 hover:border-green-300';
+                      cellClass = 'border-2 border-green-200 bg-green-50 hover:border-green-400';
                     }
                   }
 
@@ -449,7 +449,7 @@ export default function History({ session, isGuest }) {
                       {/* 3. 선택되었을 때 실패 여부에 따라 텍스트 색상 분기 */}
                       <span className={`text-sm font-bold ${
                         isSelected 
-                          ? (hasFailure ? 'text-red-700' : 'text-green-700') 
+                          ? (hasFailure ? 'text-orange-700' : 'text-green-700') 
                           : isTodayDate ? 'text-purple-700' : 'text-gray-700'
                       }`}>
                         {format(day, 'd')}
@@ -458,7 +458,7 @@ export default function History({ session, isGuest }) {
                       {(hasSummaries || isActiveCycleDay) && (
                         <div className="flex gap-1 mt-1 justify-center">
                           {daySummaries.slice(0, 2).map((s, idx) => (
-                            <div key={idx} className={`w-1.5 h-1.5 rounded-full ${s.is_success ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                            <div key={idx} className={`w-1.5 h-1.5 rounded-full ${s.is_success ? 'bg-green-500' : 'bg-orange-500'}`}></div>
                           ))}
                           {isActiveCycleDay && (
                             <div className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse"></div>
@@ -567,7 +567,7 @@ export default function History({ session, isGuest }) {
                             return (
                               <div key={index} className="flex flex-col rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden animate-fade-in">
                                 {/* Header */}
-                                <div className={`flex items-center justify-between px-4 py-3 border-b ${isCompleted ? (sum ? (sum.is_success ? 'bg-green-50/50 border-green-100' : 'bg-red-50/50 border-red-100') : 'bg-gray-50 border-gray-100') : 'bg-gray-50 border-gray-100'}`}>
+                                <div className={`flex items-center justify-between px-4 py-3 border-b ${isCompleted ? (sum ? (sum.is_success ? 'bg-green-50/50 border-green-100' : 'bg-orange-50/50 border-orange-100') : 'bg-gray-50 border-gray-100') : 'bg-gray-50 border-gray-100'}`}>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs font-black text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-100">
                                       {isCompleted ? `${(sum?.cycle_start || block.fallbackStart).slice(11, 16)} 시작` : '진행 중인 사이클'}
@@ -575,7 +575,7 @@ export default function History({ session, isGuest }) {
                                   </div>
                                   
                                   {isCompleted ? (
-                                    <span className={`text-[10px] font-black px-2 py-1 rounded-full ${sum ? (sum.is_success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') : 'bg-gray-100 text-gray-600'}`}>
+                                    <span className={`text-[10px] font-black px-2 py-1 rounded-full ${sum ? (sum.is_success ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800') : 'bg-gray-100 text-gray-600'}`}>
                                       {sum ? (sum.is_success ? '공복 성공 🎉' : '공복 미달') : '요약 데이터 없음'}
                                     </span>
                                   ) : (
@@ -592,7 +592,7 @@ export default function History({ session, isGuest }) {
                                       {sum.is_success ? (
                                         <CheckCircle2 size={18} className="text-green-600" />
                                       ) : (
-                                        <XCircle size={18} className="text-red-600" />
+                                        <XCircle size={18} className="text-orange-600" />
                                       )}
                                       <span className="text-sm font-bold text-gray-800">
                                         직전 공복 달성: <span className="underline font-black">{sum.fasting_hours}시간</span>
@@ -720,7 +720,7 @@ export default function History({ session, isGuest }) {
                   </div>
                   <div className="bg-white rounded-xl px-4 py-3 flex-1 text-center shadow-sm">
                     <div className="text-xs text-gray-400 font-bold">최고</div>
-                    <div className="text-lg font-black text-red-500">
+                    <div className="text-lg font-black text-orange-500">
                       {Math.max(...weightData.map(d => d.weight)).toFixed(1)}kg
                     </div>
                   </div>
