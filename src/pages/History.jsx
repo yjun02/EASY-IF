@@ -66,6 +66,7 @@ export default function History({ session, isGuest }) {
   const [isInitializing, setIsInitializing] = useState(true);
   const isFirstLoad = useRef(true);
   const [firstLogDate, setFirstLogDate] = useState(null);
+  const summariesRef = useRef([]);
 
   useEffect(() => {
     async function fetchFirstLog() {
@@ -115,11 +116,8 @@ export default function History({ session, isGuest }) {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
       const data = getGuestCycleSummariesForMonth(year, month);
+      summariesRef.current = data;
       setSummaries(data);
-      if (autoSelect) {
-        const today = new Date();
-        setTimeout(() => handleDayClick(today), 0);
-      }
     } else if (session?.user) {
       const { data: summariesData } = await supabase
         .from('cycle_summaries')
@@ -138,6 +136,7 @@ export default function History({ session, isGuest }) {
         .order('eating_at', { ascending: true });
         
       if (summariesData) {
+        summariesRef.current = summariesData;
         setSummaries(summariesData);
       }
       
@@ -179,10 +178,10 @@ export default function History({ session, isGuest }) {
         setActiveCycleDate(null);
       }
 
-      if (summariesData && autoSelect) {
-        const today = new Date();
-        setTimeout(() => handleDayClick(today), 0);
-      }
+    }
+
+    if (autoSelect) {
+      await handleDayClick(new Date());
     }
   };
 
@@ -297,7 +296,8 @@ export default function History({ session, isGuest }) {
         .order('eating_at', { ascending: true });
 
       // Filter summaries loaded for the month locally to avoid timezone mismatch
-      const summariesData = summaries.filter(s => {
+      const summariesSource = summariesRef.current.length > 0 ? summariesRef.current : summaries;
+      const summariesData = summariesSource.filter(s => {
         try {
           return formatKstDateOnly(parseKstToDate(s.cycle_start)) === dateStr;
         } catch (e) {
