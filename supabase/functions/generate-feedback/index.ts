@@ -92,7 +92,6 @@ serve(async (req) => {
       throw new Error('Unauthorized - No Authorization header found');
     }
 
-    // 1. Edge Function 내부에서 Supabase 클라이언트 초기화 (요청한 유저의 권한으로)
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -111,26 +110,37 @@ serve(async (req) => {
     try { bodyParams = await req.json(); } catch(e) {}
     const { cycleStartIso, cycleEndIso, prevFastingResult } = bodyParams as any;
 
-    const queryDateStr = cycleStartIso ? new Date(cycleStartIso).toLocaleDateString('en-CA', { timeZone: "Asia/Seoul" }) : new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).toLocaleDateString('en-CA');
-    
-    // 2. 동시성 제어 (Atomic Lock 패턴 적용)
-    // - 클라이언트 다중 기기 등에서 동시 요청 시 API 남용을 막기 위한 장치
+    if (!cycleStartIso || !cycleEndIso) {
+      throw new Error("요청 바디에 cycleStartIso 및 cycleEndIso 정보가 올바르게 주어지지 않았습니다.");
+    }
+
+    // ─── 2. 동시성 제어 및 사이클 요약 데이터 삽입/업데이트 ───
+    const fastingHours = prevFastingResult ? prevFastingResult.hours : null;
+    const isSuccess = prevFastingResult ? prevFastingResult.success : true;
+
     const { error: insertError } = await supabaseClient
-      .from('daily_summaries')
+      .from('cycle_summaries')
       .insert({
         user_id: user.id,
-        date: queryDateStr,
+        cycle_start: cycleStartIso,
+        cycle_end: cycleEndIso,
+        fasting_hours: fastingHours,
+        is_success: isSuccess,
         ai_feedback: '[GENERATING]'
       });
 
     if (insertError) {
-      // 이미 Row가 존재할 경우 (Unique Constraint 위반 등), ai_feedback이 null인 경우에만 [GENERATING]으로 업데이트 시도
       const { data: updateData, error: updateError } = await supabaseClient
-        .from('daily_summaries')
-        .update({ ai_feedback: '[GENERATING]' })
+        .from('cycle_summaries')
+        .update({ 
+          cycle_end: cycleEndIso,
+          fasting_hours: fastingHours,
+          is_success: isSuccess,
+          ai_feedback: '[GENERATING]' 
+        })
         .eq('user_id', user.id)
-        .eq('date', queryDateStr)
-        .is('ai_feedback', null)
+        .eq('cycle_start', cycleStartIso)
+        .or('ai_feedback.is.null,ai_feedback.eq.,ai_feedback.eq.데이터 이전으로 인해 결과 누락')
         .select();
 
       if (updateError || !updateData || updateData.length === 0) {
@@ -138,7 +148,7 @@ serve(async (req) => {
       }
     }
 
-    // 3. 클라이언트가 보내는 데이터를 믿지 않고 DB에서 직접 식단 정보 조회
+    // ─── 3. 식사 가능 윈도우 조회 ───
     const { data: profile } = await supabaseClient
       .from('users_profile')
       .select('eating_window')
@@ -147,46 +157,39 @@ serve(async (req) => {
 
     const eatingWindow = profile?.eating_window || 8;
 
-    let query = supabaseClient
+    // ─── 4. 식단 정보 조회 ───
+    const { data: mealLogs } = await supabaseClient
       .from('meal_logs')
       .select('*')
-      .eq('user_id', user.id);
-
-    if (cycleStartIso && cycleEndIso) {
-      query = query.gte('logged_at', cycleStartIso).lte('logged_at', cycleEndIso);
-    } else {
-      query = query.gte('logged_at', `${queryDateStr}T00:00:00+09:00`);
-    }
-
-    const { data: mealLogs } = await query.order('logged_at', { ascending: true });
+      .eq('user_id', user.id)
+      .gte('eating_at', cycleStartIso)
+      .lte('eating_at', cycleEndIso)
+      .order('eating_at', { ascending: true });
 
     if (!mealLogs || mealLogs.length === 0) {
-      throw new Error("오늘 기록된 식단이 없어 피드백을 생성할 수 없습니다.");
+      throw new Error("해당 사이클에 기록된 식단이 없어 피드백을 생성할 수 없습니다.");
     }
 
-    // 4. 최근 5일 히스토리 조회
-    const fiveDaysAgo = new Date();
-    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-    const fiveDaysAgoStr = fiveDaysAgo.toLocaleDateString('en-CA', { timeZone: "Asia/Seoul" });
-
+    // ─── 5. 최근 5개 사이클 히스토리 조회 ───
     const { data: recentSummaries } = await supabaseClient
-      .from('daily_summaries')
-      .select('date, actual_fasting_hours, is_success')
+      .from('cycle_summaries')
+      .select('cycle_start, fasting_hours, is_success')
       .eq('user_id', user.id)
-      .gte('date', fiveDaysAgoStr)
-      .order('date', { ascending: false });
+      .lt('cycle_start', cycleStartIso)
+      .order('cycle_start', { ascending: false })
+      .limit(5);
 
-    let recentContext = "최근 5일간의 단식 기록이 없습니다. (이번이 첫 사용이거나 한동안 기록하지 않음)";
+    let recentContext = "이전 사이클의 단식 기록이 없습니다. (이번이 첫 사용이거나 한동안 기록하지 않음)";
     if (recentSummaries && recentSummaries.length > 0) {
-      const validSummaries = recentSummaries.filter(s => s.actual_fasting_hours !== null && s.actual_fasting_hours !== undefined);
+      const validSummaries = recentSummaries.filter(s => s.fasting_hours !== null && s.fasting_hours !== undefined);
       if (validSummaries.length > 0) {
         recentContext = validSummaries.map(s => 
-          `- ${s.date}: 공복 ${s.actual_fasting_hours}시간 유지 (${s.is_success ? '목표 달성' : '목표 미달'})`
+          `- 시작시각 ${s.cycle_start.slice(0, 16)}: 공복 ${s.fasting_hours}시간 유지 (${s.is_success ? '목표 달성' : '목표 미달(치팅)'})`
         ).join('\n');
       }
     }
 
-    // 5. 전체 누적 기록 통계 조회 (장기/복귀 유저 파악)
+    // ─── 6. 전체 누적 기록 통계 조회 ───
     const { count: totalMeals } = await supabaseClient
       .from('meal_logs')
       .select('*', { count: 'exact', head: true })
@@ -194,32 +197,26 @@ serve(async (req) => {
 
     const { data: firstMeal } = await supabaseClient
       .from('meal_logs')
-      .select('logged_at')
+      .select('eating_at')
       .eq('user_id', user.id)
-      .order('logged_at', { ascending: true })
+      .order('eating_at', { ascending: true })
       .limit(1)
       .maybeSingle();
 
-    let userStatsContext = "- 앱 최초 사용: 판단 불가";
+    let userStatsContext = "- 최초 기록: 판단 불가";
     if (totalMeals && firstMeal) {
-      const firstDateObj = new Date(firstMeal.logged_at);
+      const firstDateObj = new Date(firstMeal.eating_at.replace(' ', 'T').slice(0, 19) + '+09:00');
       const firstUseDate = firstDateObj.toLocaleDateString('ko-KR', { timeZone: "Asia/Seoul" });
       const daysSinceFirstUse = Math.max(1, Math.floor((new Date().getTime() - firstDateObj.getTime()) / (1000 * 60 * 60 * 24)));
       
-      userStatsContext = `- 앱 가입/최초 기록일: ${firstUseDate} (약 ${daysSinceFirstUse}일 전)
+      userStatsContext = `- 최초 식단 등록일: ${firstUseDate} (약 ${daysSinceFirstUse}일 전)
 - 총 누적 식단 기록 수: ${totalMeals}번`;
     }
 
-    // 4. 프롬프트 생성
+    // ─── 7. 식단 요약 문자열 작성 ───
     const mealSummary = mealLogs
       .map((log: any) => {
-        const date = new Date(log.logged_at);
-        const timeStr = new Intl.DateTimeFormat('ko-KR', {
-          timeZone: 'Asia/Seoul',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        }).format(date);
+        const timeStr = log.eating_at.slice(11, 16);
         return `- ${timeStr} ${log.food_name} (비고: ${log.amount || '없음'})`;
       })
       .join('\n');
@@ -250,7 +247,7 @@ ${fastingContext}
 ${userStatsContext}
 
 <RECENT_HISTORY>
-[최근 5일간의 공복 달성 히스토리]
+[최근 5개 사이클의 공복 달성 히스토리]
 ${recentContext}
 </RECENT_HISTORY>
 
@@ -271,22 +268,20 @@ ${mealSummary}
 4. 친절하고 다정한 코치처럼 부드러운 한국어(~해요, ~요)를 사용하세요.
 5. 답변은 마크다운 포맷(강조표시, 목록 기호 등) 없이 순수 텍스트로만 작성하세요.`;
 
-    // 5. Gemini API 호출
     const feedback = await callWithRotation(prompt);
 
-    // 6. DB에 피드백 결과 직접 저장 (Lock 덮어쓰기)
+    // DB에 피드백 결과 직접 저장 (Lock 덮어쓰기)
     await supabaseClient
-      .from('daily_summaries')
+      .from('cycle_summaries')
       .update({ ai_feedback: feedback })
       .eq('user_id', user.id)
-      .eq('date', queryDateStr);
+      .eq('cycle_start', cycleStartIso);
 
     return new Response(JSON.stringify({ feedback }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
   } catch (error: any) {
-    // 에러 발생 시 Lock 해제 처리
     try {
       const authHeader = req.headers.get('Authorization');
       if (authHeader) {
@@ -298,16 +293,18 @@ ${mealSummary}
         let bodyParams = {};
         try { bodyParams = await req.json(); } catch(e) {}
         const { cycleStartIso } = bodyParams as any;
-        const queryDateStr = cycleStartIso ? new Date(cycleStartIso).toLocaleDateString('en-CA', { timeZone: "Asia/Seoul" }) : new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).toLocaleDateString('en-CA');
         
-        await supabaseClient
-          .from('daily_summaries')
-          .update({ ai_feedback: null })
-          .eq('ai_feedback', '[GENERATING]')
-          .eq('date', queryDateStr);
+        if (cycleStartIso) {
+          await supabaseClient
+            .from('cycle_summaries')
+            .update({ ai_feedback: null })
+            .eq('user_id', supabaseClient.auth.getUser(authHeader.replace('Bearer ', '')).then(r=>r.data.user?.id))
+            .eq('ai_feedback', '[GENERATING]')
+            .eq('cycle_start', cycleStartIso);
+        }
       }
     } catch (e) {
-      // 롤백 실패 시 무시
+      // ignore
     }
 
     return new Response(JSON.stringify({ error: error.message }), {

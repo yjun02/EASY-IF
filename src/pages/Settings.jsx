@@ -103,7 +103,7 @@ export default function Settings({ session, isGuest, onGuestEnd }) {
         alert("모든 로컬 기록이 초기화되었습니다.");
       } else {
         const { error: mealError } = await supabase.from('meal_logs').delete().eq('user_id', session.user.id);
-        const { error: sumError } = await supabase.from('daily_summaries').delete().eq('user_id', session.user.id);
+        const { error: sumError } = await supabase.from('cycle_summaries').delete().eq('user_id', session.user.id);
         
         if (!mealError && !sumError) {
           alert("모든 기록이 초기화되었습니다.");

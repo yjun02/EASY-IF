@@ -7,14 +7,48 @@ import { ko } from 'date-fns/locale';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { 
   getAllGuestMealLogs, 
-  getGuestSummariesForMonth, 
+  getGuestCycleSummariesForMonth, 
   getGuestWeightData, 
   getGuestMealLogsForDate, 
-  getGuestSummaryForDate 
+  getGuestCycleSummariesForDate 
 } from '../lib/guestStorage';
+
+const parseKstToDate = (eatingAtStr) => {
+  if (!eatingAtStr) return new Date();
+  if (eatingAtStr.includes('Z') || eatingAtStr.includes('+')) {
+    return new Date(eatingAtStr);
+  }
+  const isoStr = eatingAtStr.replace(' ', 'T').slice(0, 19) + '+09:00';
+  return new Date(isoStr);
+};
+
+const formatKst = (date) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23'
+  });
+  const parts = formatter.formatToParts(date);
+  const partMap = {};
+  parts.forEach(p => partMap[p.type] = p.value);
+  return `${partMap.year}-${partMap.month}-${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`;
+};
+
+const formatKstDateOnly = (date) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  });
+  const parts = formatter.formatToParts(date);
+  const partMap = {};
+  parts.forEach(p => partMap[p.type] = p.value);
+  return `${partMap.year}-${partMap.month}-${partMap.day}`;
+};
 
 export default function History({ session, isGuest }) {
   const [viewMode, setViewMode] = useState('calendar'); // 'calendar' | 'weight'
+  const [activeCycleDate, setActiveCycleDate] = useState(null);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [summaries, setSummaries] = useState([]);
 
@@ -38,20 +72,20 @@ export default function History({ session, isGuest }) {
       if (isGuest) {
         const allLogs = getAllGuestMealLogs();
         if (allLogs.length > 0) {
-          const sorted = allLogs.sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at));
-          setFirstLogDate(format(new Date(sorted[0].logged_at), 'yyyy-MM-dd'));
+          const sorted = allLogs.sort((a, b) => parseKstToDate(a.eating_at) - parseKstToDate(b.eating_at));
+          setFirstLogDate(formatKstDateOnly(parseKstToDate(sorted[0].eating_at)));
         }
       } else if (session?.user) {
         const { data: firstMealData } = await supabase
           .from('meal_logs')
-          .select('logged_at')
+          .select('eating_at')
           .eq('user_id', session.user.id)
-          .order('logged_at', { ascending: true })
+          .order('eating_at', { ascending: true })
           .limit(1)
           .maybeSingle();
         
         if (firstMealData) {
-          setFirstLogDate(format(new Date(firstMealData.logged_at), 'yyyy-MM-dd'));
+          setFirstLogDate(formatKstDateOnly(parseKstToDate(firstMealData.eating_at)));
         }
       }
     }
@@ -80,27 +114,74 @@ export default function History({ session, isGuest }) {
     if (isGuest) {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
-      const data = getGuestSummariesForMonth(year, month);
+      const data = getGuestCycleSummariesForMonth(year, month);
       setSummaries(data);
       if (autoSelect) {
         const today = new Date();
         setTimeout(() => handleDayClick(today), 0);
       }
     } else if (session?.user) {
-      const { data } = await supabase
-        .from('daily_summaries')
+      const { data: summariesData } = await supabase
+        .from('cycle_summaries')
         .select('*')
         .eq('user_id', session.user.id)
-        .gte('date', start)
-        .lte('date', end);
+        .gte('cycle_start', start)
+        .lte('cycle_start', end + ' 23:59:59Z');
         
-      if (data) {
-        setSummaries(data);
-        // Auto-select today
-        if (autoSelect) {
-          const today = new Date();
-          setTimeout(() => handleDayClick(today), 0);
+      // Fetch all meals for the month to calculate active cycle
+      const { data: mealsData } = await supabase
+        .from('meal_logs')
+        .select('eating_at')
+        .eq('user_id', session.user.id)
+        .gte('eating_at', start)
+        .lte('eating_at', end + ' 23:59:59Z')
+        .order('eating_at', { ascending: true });
+        
+      if (summariesData) {
+        setSummaries(summariesData);
+      }
+      
+      if (mealsData && mealsData.length > 0) {
+        let currentCycle = [];
+        const EATING_WINDOW_HOURS = 8;
+        const allCycles = [];
+        
+        mealsData.forEach(meal => {
+          if (currentCycle.length === 0) {
+            currentCycle.push(meal);
+          } else {
+            const prev = parseKstToDate(currentCycle[0].eating_at).getTime();
+            const curr = parseKstToDate(meal.eating_at).getTime();
+            if ((curr - prev) / (1000 * 60 * 60) > EATING_WINDOW_HOURS) {
+              allCycles.push(currentCycle);
+              currentCycle = [meal];
+            } else {
+              currentCycle.push(meal);
+            }
+          }
+        });
+        if (currentCycle.length > 0) {
+          allCycles.push(currentCycle);
         }
+        
+        const lastCycle = allCycles[allCycles.length - 1];
+        const lastMealTime = parseKstToDate(lastCycle[lastCycle.length - 1].eating_at).getTime();
+        const nowKst = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" })).getTime();
+        
+        // If the last meal was within the eating window, it's an active cycle
+        if ((nowKst - lastMealTime) / (1000 * 60 * 60) <= EATING_WINDOW_HOURS) {
+          const activeStartStr = formatKstDateOnly(parseKstToDate(lastCycle[0].eating_at));
+          setActiveCycleDate(activeStartStr);
+        } else {
+          setActiveCycleDate(null);
+        }
+      } else {
+        setActiveCycleDate(null);
+      }
+
+      if (summariesData && autoSelect) {
+        const today = new Date();
+        setTimeout(() => handleDayClick(today), 0);
       }
     }
   };
@@ -112,8 +193,8 @@ export default function History({ session, isGuest }) {
     if (isGuest) {
       const allWeights = getGuestWeightData();
       if (startDate) {
-        const limitDate = new Date(startDate);
-        data = allWeights.filter(w => new Date(w.logged_at) >= limitDate);
+        const limitDate = parseKstToDate(startDate);
+        data = allWeights.filter(w => parseKstToDate(w.eating_at) >= limitDate);
       } else {
         data = allWeights;
       }
@@ -121,13 +202,13 @@ export default function History({ session, isGuest }) {
       // meal_logs에서 체중이 기록된 행만 가져오기
       let query = supabase
         .from('meal_logs')
-        .select('logged_at, weight')
+        .select('eating_at, weight')
         .eq('user_id', session.user.id)
         .not('weight', 'is', null)
-        .order('logged_at', { ascending: true });
+        .order('eating_at', { ascending: true });
 
       if (startDate) {
-        query = query.gte('logged_at', startDate);
+        query = query.gte('eating_at', startDate);
       }
 
       const { data: dbData } = await query;
@@ -138,7 +219,7 @@ export default function History({ session, isGuest }) {
       // 날짜별 최저 체중만 추출
       const dailyMin = {};
       data.forEach(log => {
-        const dateKey = format(new Date(log.logged_at), 'yyyy-MM-dd');
+        const dateKey = formatKstDateOnly(parseKstToDate(log.eating_at));
         if (!dailyMin[dateKey] || log.weight < dailyMin[dateKey]) {
           dailyMin[dateKey] = log.weight;
         }
@@ -202,8 +283,8 @@ export default function History({ session, isGuest }) {
 
     if (isGuest) {
       const meals = getGuestMealLogsForDate(dateStr);
-      const summary = getGuestSummaryForDate(dateStr);
-      setDayDetail({ meals: meals || [], summary });
+      const summariesData = getGuestCycleSummariesForDate(dateStr);
+      setDayDetail({ meals: meals || [], summaries: summariesData || [] });
       setDayDetailLoading(false);
     } else if (session?.user) {
       // Fetch meals for that day
@@ -211,19 +292,20 @@ export default function History({ session, isGuest }) {
         .from('meal_logs')
         .select('*')
         .eq('user_id', session.user.id)
-        .gte('logged_at', `${dateStr}T00:00:00+09:00`)
-        .lt('logged_at', `${dateStr}T23:59:59+09:00`)
-        .order('logged_at', { ascending: true });
+        .gte('eating_at', `${dateStr} 00:00:00`)
+        .lte('eating_at', `${dateStr} 23:59:59`)
+        .order('eating_at', { ascending: true });
 
-      // Fetch summary for that day
-      const { data: summary } = await supabase
-        .from('daily_summaries')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('date', dateStr)
-        .maybeSingle();
+      // Filter summaries loaded for the month locally to avoid timezone mismatch
+      const summariesData = summaries.filter(s => {
+        try {
+          return formatKstDateOnly(parseKstToDate(s.cycle_start)) === dateStr;
+        } catch (e) {
+          return s.cycle_start.startsWith(dateStr);
+        }
+      }).sort((a, b) => a.cycle_start.localeCompare(b.cycle_start));
 
-      setDayDetail({ meals: meals || [], summary });
+      setDayDetail({ meals: meals || [], summaries: summariesData || [] });
       setDayDetailLoading(false);
     }
   };
@@ -301,48 +383,92 @@ export default function History({ session, isGuest }) {
             </div>
             
             <div className="grid grid-cols-7 gap-2">
-              {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
-                <div key={`empty-${i}`} className="aspect-square"></div>
-              ))}
-              
-              {daysInMonth.map(day => {
-                const dayStr = format(day, 'yyyy-MM-dd');
-                const summary = summaries.find(s => isSameDay(new Date(s.date), day));
-                const isSelected = selectedDate && isSameDay(selectedDate, day);
-                const isTodayDate = isSameDay(new Date(), day);
-                const isFirstDay = firstLogDate && dayStr === firstLogDate;
+                {Array.from({ length: startOfMonth(currentDate).getDay() }).map((_, i) => (
+                  <div key={`empty-${i}`} className="aspect-square"></div>
+                ))}
                 
-                return (
-                  <div 
-                    key={day.toString()} 
-                    onClick={() => handleDayClick(day)}
-                    className={`relative aspect-square flex flex-col items-center justify-center rounded-2xl border cursor-pointer transition-all duration-150 ${
-                      isSelected ? 'border-green-500 bg-green-50 scale-105 z-10 ring-2 ring-green-300' :
-                      summary ? (summary.is_success ? 'border-green-200 bg-green-50 hover:border-green-300' : 'border-red-200 bg-red-50 hover:border-red-300') : 'border-gray-100 bg-white hover:border-gray-200'
-                    }`}
-                  >
-                    {(isFirstDay || isTodayDate) && (
-                      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 z-20 pointer-events-none">
-                        {isTodayDate && (
-                          <div className="bg-purple-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
-                            TODAY
-                          </div>
-                        )}
-                        {isFirstDay && (
-                          <div className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
-                            START 🏁
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <span className={`text-sm font-bold ${isSelected ? 'text-green-700' : isTodayDate ? 'text-purple-700' : 'text-gray-700'}`}>{format(day, 'd')}</span>
-                    {summary && (
-                      <div className={`w-2 h-2 rounded-full mt-1 ${summary.is_success ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                {daysInMonth.map(day => {
+                  const dayStr = format(day, 'yyyy-MM-dd');
+                  const daySummaries = summaries.filter(s => {
+                    try {
+                      return formatKstDateOnly(parseKstToDate(s.cycle_start)) === dayStr;
+                    } catch (e) {
+                      return s.cycle_start.startsWith(dayStr);
+                    }
+                  });
+                  const isSelected = selectedDate && isSameDay(selectedDate, day);
+                  const isTodayDate = isSameDay(new Date(), day);
+                  const isFirstDay = firstLogDate && dayStr === firstLogDate;
+                  
+                  const isActiveCycleDay = activeCycleDate === dayStr;
+                  const hasSummaries = daySummaries.length > 0;
+                  const hasFailure = daySummaries.some(s => !s.is_success);
+                  
+                  // 1. 스타일 변수 초기화
+                  let cellClass = 'border-gray-100 bg-white hover:border-gray-200';
+                  
+                  // 2. 조건별 스타일 할당 (선택 상태 및 실패 여부 반영)
+                  if (isSelected) {
+                    if (hasFailure) {
+                      // 실패 항목이 있으면서 선택된 경우: 붉은색 강조 스타일
+                      cellClass = 'border-red-500 scale-105 z-10 ring-2 ring-orange-200 bg-orange-50';
+                    } else {
+                      // 성공 혹은 일반 항목이면서 선택된 경우: 기존 초록색 강조 스타일
+                      cellClass = 'border-green-500 scale-105 z-10 ring-2 ring-green-300 bg-green-50';
+                    }
+                  } else if (hasSummaries || isActiveCycleDay) {
+                    if (hasFailure) {
+                      cellClass = 'border-red-200 bg-red-50 hover:border-red-300';
+                    } else if (!hasSummaries && isActiveCycleDay) {
+                      cellClass = 'border-gray-200 bg-gray-50 hover:border-gray-300';
+                    } else {
+                      cellClass = 'border-green-200 bg-green-50 hover:border-green-300';
+                    }
+                  }
+
+                  return (
+                    <div 
+                      key={day.toString()} 
+                      onClick={() => handleDayClick(day)}
+                      className={`relative aspect-square flex flex-col items-center justify-center rounded-2xl border cursor-pointer transition-all duration-150 ${cellClass}`}
+                    >
+                      {(isFirstDay || isTodayDate) && (
+                        <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 z-20 pointer-events-none">
+                          {isTodayDate && (
+                            <div className="bg-purple-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
+                              TODAY
+                            </div>
+                          )}
+                          {isFirstDay && (
+                            <div className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm tracking-tighter whitespace-nowrap">
+                              START 🏁
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* 3. 선택되었을 때 실패 여부에 따라 텍스트 색상 분기 */}
+                      <span className={`text-sm font-bold ${
+                        isSelected 
+                          ? (hasFailure ? 'text-red-700' : 'text-green-700') 
+                          : isTodayDate ? 'text-purple-700' : 'text-gray-700'
+                      }`}>
+                        {format(day, 'd')}
+                      </span>
+                      
+                      {(hasSummaries || isActiveCycleDay) && (
+                        <div className="flex gap-1 mt-1 justify-center">
+                          {daySummaries.slice(0, 2).map((s, idx) => (
+                            <div key={idx} className={`w-1.5 h-1.5 rounded-full ${s.is_success ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          ))}
+                          {isActiveCycleDay && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse"></div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
             {/* Day Detail Panel */}
             {selectedDate && (
@@ -362,86 +488,175 @@ export default function History({ session, isGuest }) {
                   </div>
                 ) : dayDetail ? (
                   <div className="flex flex-col gap-4">
-                    {/* Fasting Status */}
-                    {dayDetail.summary ? (
-                      <div className={`flex items-center gap-3 px-4 py-3 rounded-xl ${
-                        dayDetail.summary.is_success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {dayDetail.summary.is_success 
-                          ? <CheckCircle2 size={20} /> 
-                          : <XCircle size={20} />
-                        }
-                        <span className="font-bold text-sm">
-                          {dayDetail.summary.is_success ? '공복 목표 달성! 🎉' : '공복 목표 미달성'}
-                          {dayDetail.summary.actual_fasting_hours != null && 
-                            ` (실제 공복: ${dayDetail.summary.actual_fasting_hours}시간)`
+                    {(() => {
+                      if (!dayDetail.meals || dayDetail.meals.length === 0) {
+                        return (
+                          <div className="flex flex-col items-center justify-center py-10 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <UtensilsCrossed size={40} className="text-gray-300 mb-3" />
+                            <p className="text-gray-400 font-bold text-sm">이 날에는 기록된 사이클이나 식단이 없습니다.</p>
+                          </div>
+                        );
+                      }
+
+                      // 1. 식사 시간 간격(8시간)을 기준으로 다이나믹하게 사이클 분리
+                      const dynamicCycles = [];
+                      let currentCycleMeals = [];
+                      const EATING_WINDOW_HOURS = 8; // 기본값
+                      
+                      dayDetail.meals.forEach((meal) => {
+                        if (currentCycleMeals.length === 0) {
+                          currentCycleMeals.push(meal);
+                        } else {
+                          const firstMeal = currentCycleMeals[0];
+                          const prevTime = parseKstToDate(firstMeal.eating_at).getTime();
+                          const currTime = parseKstToDate(meal.eating_at).getTime();
+                          const gapHours = (currTime - prevTime) / (1000 * 60 * 60);
+                          
+                          if (gapHours > EATING_WINDOW_HOURS) {
+                            dynamicCycles.push([...currentCycleMeals]);
+                            currentCycleMeals = [meal];
+                          } else {
+                            currentCycleMeals.push(meal);
                           }
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-100 text-gray-500">
-                        <CalendarIcon size={20} />
-                        <span className="font-bold text-sm">이 날에는 기록된 요약이 없습니다.</span>
-                      </div>
-                    )}
+                        }
+                      });
+                      if (currentCycleMeals.length > 0) {
+                        dynamicCycles.push(currentCycleMeals);
+                      }
 
-                    {/* Weight */}
-                    {dayDetail.meals.some(m => m.weight) ? (
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 text-blue-800">
-                        <Scale size={20} />
-                        <span className="font-bold text-sm">
-                          체중: {Math.min(...dayDetail.meals.filter(m => m.weight).map(m => parseFloat(m.weight)))}kg
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gray-100 text-gray-500">
-                        <Scale size={20} />
-                        <span className="font-bold text-sm">이 날은 체중이 기록되지 않았습니다.</span>
-                      </div>
-                    )}
+                      // 2. 분리된 사이클과 DB 요약 정보 매칭
+                      const cycleBlocks = dynamicCycles.map((meals, index) => {
+                        const startIso = formatKst(parseKstToDate(meals[0].eating_at));
+                        const matchingSummary = dayDetail.summaries?.find(s => s.cycle_start === startIso);
+                        
+                        const minWeight = meals.some(m => m.weight) 
+                          ? Math.min(...meals.filter(m => m.weight).map(m => parseFloat(m.weight))) 
+                          : null;
 
-                    {/* Meals */}
-                    {dayDetail.meals.length > 0 ? (
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <UtensilsCrossed size={16} className="text-gray-500" />
-                          <span className="text-sm font-bold text-gray-700">식단 기록 ({dayDetail.meals.length}건)</span>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          {dayDetail.meals.map((meal, i) => {
-                            const t = new Date(meal.logged_at);
+                        // DB 요약이 있거나 마지막 사이클이 아닌 경우 완료된 것으로 간주
+                        const isCompleted = matchingSummary ? true : (index < dynamicCycles.length - 1);
+
+                        return {
+                          type: isCompleted ? 'completed' : 'active',
+                          summary: matchingSummary || null,
+                          meals: meals,
+                          weight: minWeight,
+                          fallbackStart: startIso
+                        };
+                      });
+                      if (cycleBlocks.length === 0) {
+                        return (
+                          <div className="flex flex-col items-center justify-center py-10 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <UtensilsCrossed size={40} className="text-gray-300 mb-3" />
+                            <p className="text-gray-400 font-bold text-sm">이 날에는 기록된 사이클이나 식단이 없습니다.</p>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-col gap-5">
+                          <div className="text-sm font-bold text-gray-500 flex items-center gap-1.5 px-1">
+                            <CalendarIcon size={16} />
+                            <span>단식 사이클 결과 ({cycleBlocks.length}건)</span>
+                          </div>
+                          
+                          {cycleBlocks.map((block, index) => {
+                            const isCompleted = block.type === 'completed';
+                            const sum = block.summary;
+                            
                             return (
-                              <div key={i} className="bg-white rounded-xl px-4 py-3 flex items-start gap-3 border border-gray-100">
-                                <div className="pt-0.5 shrink-0">
-                                  <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-lg font-mono">
-                                    {t.getHours().toString().padStart(2,'0')}:{t.getMinutes().toString().padStart(2,'0')}
-                                  </span>
+                              <div key={index} className="flex flex-col rounded-2xl bg-white border border-gray-200 shadow-sm overflow-hidden animate-fade-in">
+                                {/* Header */}
+                                <div className={`flex items-center justify-between px-4 py-3 border-b ${isCompleted ? (sum ? (sum.is_success ? 'bg-green-50/50 border-green-100' : 'bg-red-50/50 border-red-100') : 'bg-gray-50 border-gray-100') : 'bg-gray-50 border-gray-100'}`}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-gray-500 bg-white px-2 py-1 rounded shadow-sm border border-gray-100">
+                                      {isCompleted ? `${(sum?.cycle_start || block.fallbackStart).slice(11, 16)} 시작` : '진행 중인 사이클'}
+                                    </span>
+                                  </div>
+                                  
+                                  {isCompleted ? (
+                                    <span className={`text-[10px] font-black px-2 py-1 rounded-full ${sum ? (sum.is_success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') : 'bg-gray-100 text-gray-600'}`}>
+                                      {sum ? (sum.is_success ? '공복 성공 🎉' : '공복 미달') : '요약 데이터 없음'}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-black px-2 py-1 rounded-full bg-gray-200 text-gray-600">
+                                      진행중
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-sm font-bold text-gray-800 leading-tight">{meal.food_name}</span>
-                                  {meal.amount && (
-                                    <span className="text-xs text-gray-500 font-medium">{meal.amount}</span>
+                                
+                                <div className="p-4 flex flex-col gap-4">
+                                  {/* Fasting Hours */}
+                                  {isCompleted && sum?.fasting_hours !== null && sum?.fasting_hours !== undefined && (
+                                    <div className="flex items-center gap-2">
+                                      {sum.is_success ? (
+                                        <CheckCircle2 size={18} className="text-green-600" />
+                                      ) : (
+                                        <XCircle size={18} className="text-red-600" />
+                                      )}
+                                      <span className="text-sm font-bold text-gray-800">
+                                        직전 공복 달성: <span className="underline font-black">{sum.fasting_hours}시간</span>
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Weight */}
+                                  {block.weight !== null && (
+                                    <div className="flex items-center gap-2 text-blue-800 bg-blue-50 px-3 py-2 rounded-xl">
+                                      <Scale size={16} />
+                                      <span className="font-bold text-sm">체중: {block.weight}kg</span>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Meals */}
+                                  {block.meals.length > 0 && (
+                                    <div>
+                                      <div className="flex items-center gap-1.5 mb-2 text-gray-500">
+                                        <UtensilsCrossed size={14} />
+                                        <span className="text-xs font-bold text-gray-600">식단 기록 ({block.meals.length}건)</span>
+                                      </div>
+                                      <div className="flex flex-col gap-2">
+                                        {block.meals.map((meal, i) => {
+                                          const t = parseKstToDate(meal.eating_at);
+                                          return (
+                                            <div key={i} className="bg-gray-50 rounded-xl px-3 py-2.5 flex items-start gap-3">
+                                              <div className="pt-0.5 shrink-0">
+                                                <span className="text-xs font-bold text-gray-500 bg-white shadow-sm px-1.5 py-0.5 rounded-md font-mono">
+                                                  {t.getHours().toString().padStart(2,'0')}:{t.getMinutes().toString().padStart(2,'0')}
+                                                </span>
+                                              </div>
+                                              <div className="flex flex-col">
+                                                <span className="text-sm font-bold text-gray-800 leading-tight">{meal.food_name}</span>
+                                                {meal.amount && (
+                                                  <span className="text-[11px] text-gray-500 font-medium mt-0.5">{meal.amount}</span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* AI Feedback */}
+                                  {isCompleted && !isGuest && (
+                                    <div className="mt-1 bg-indigo-50/50 rounded-xl p-3 border border-indigo-50">
+                                      <div className="flex items-center gap-1.5 mb-1.5 text-indigo-800 font-bold text-xs">
+                                        <Sparkles size={14} className="text-indigo-500" />
+                                        <span>AI 코치 피드백</span>
+                                      </div>
+                                      <p className="text-xs text-indigo-900 leading-relaxed whitespace-pre-wrap">
+                                        {sum?.ai_feedback ? (sum.ai_feedback === '[GENERATING]' ? '피드백 생성 중입니다...' : sum.ai_feedback) : '피드백 데이터가 없습니다.'}
+                                      </p>
+                                    </div>
                                   )}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-4 font-medium">이 날에는 식단 기록이 없습니다.</p>
-                    )}
-
-                    {/* AI Feedback (게스트 모드에서는 AI 피드백 미노출) */}
-                    {!isGuest && dayDetail.summary?.ai_feedback && (
-                      <div className="bg-indigo-50 rounded-xl px-4 py-4 border border-indigo-100">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Sparkles size={16} className="text-indigo-500" />
-                          <span className="text-sm font-bold text-indigo-800">AI 간단 전문가의 피드백</span>
-                        </div>
-                        <p className="text-sm text-indigo-900 leading-relaxed whitespace-pre-wrap">{dayDetail.summary.ai_feedback}</p>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 ) : null}
               </div>

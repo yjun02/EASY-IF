@@ -11,6 +11,15 @@ const KEYS = {
   IS_GUEST: 'guest_mode_active',
 };
 
+const parseKstToDate = (eatingAtStr) => {
+  if (!eatingAtStr) return new Date();
+  if (eatingAtStr.includes('Z') || eatingAtStr.includes('+')) {
+    return new Date(eatingAtStr);
+  }
+  const isoStr = eatingAtStr.replace(' ', 'T').slice(0, 19) + '+09:00';
+  return new Date(isoStr);
+};
+
 // ─── Helper ───
 function getJSON(key, fallback = null) {
   try {
@@ -61,8 +70,8 @@ export function getGuestMealLogs(sinceHours = 72) {
   const since = new Date();
   since.setHours(since.getHours() - sinceHours);
   return all
-    .filter(m => new Date(m.logged_at) >= since)
-    .sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at));
+    .filter(m => parseKstToDate(m.eating_at) >= since)
+    .sort((a, b) => parseKstToDate(a.eating_at) - parseKstToDate(b.eating_at));
 }
 
 export function getAllGuestMealLogs() {
@@ -93,31 +102,31 @@ export function deleteGuestMealLog(id) {
   setJSON(KEYS.MEALS, all.filter(m => m.id !== id));
 }
 
-// ─── Daily Summaries ───
-export function getGuestSummaries() {
+// ─── Cycle Summaries ───
+export function getGuestCycleSummaries() {
   return getJSON(KEYS.SUMMARIES, []);
 }
 
-export function upsertGuestSummary(date, summary) {
+export function upsertGuestCycleSummary(cycleStart, summary) {
   const all = getJSON(KEYS.SUMMARIES, []);
-  const idx = all.findIndex(s => s.date === date);
+  const idx = all.findIndex(s => s.cycle_start === cycleStart);
   if (idx !== -1) {
-    all[idx] = { ...all[idx], ...summary, date };
+    all[idx] = { ...all[idx], ...summary, cycle_start: cycleStart };
   } else {
-    all.push({ ...summary, date });
+    all.push({ ...summary, cycle_start: cycleStart });
   }
   setJSON(KEYS.SUMMARIES, all);
 }
 
-export function getGuestSummariesForMonth(year, month) {
+export function getGuestCycleSummariesForMonth(year, month) {
   const all = getJSON(KEYS.SUMMARIES, []);
   const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
-  return all.filter(s => s.date.startsWith(prefix));
+  return all.filter(s => s.cycle_start.startsWith(prefix));
 }
 
-export function getGuestSummaryForDate(date) {
+export function getGuestCycleSummariesForDate(dateStr) {
   const all = getJSON(KEYS.SUMMARIES, []);
-  return all.find(s => s.date === date) || null;
+  return all.filter(s => s.cycle_start.startsWith(dateStr));
 }
 
 // ─── Reset ───
@@ -128,18 +137,14 @@ export function resetGuestData() {
 
 export function getGuestMealLogsForDate(dateStr) {
   const all = getJSON(KEYS.MEALS, []);
-  return all.filter(m => {
-    const d = new Date(m.logged_at);
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const da = String(d.getDate()).padStart(2, '0');
-    return `${y}-${mo}-${da}` === dateStr;
-  }).sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at));
+  return all
+    .filter(m => m.eating_at.startsWith(dateStr))
+    .sort((a, b) => parseKstToDate(a.eating_at) - parseKstToDate(b.eating_at));
 }
 
 export function getGuestWeightData() {
   const all = getJSON(KEYS.MEALS, []);
   return all
     .filter(m => m.weight != null)
-    .sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at));
+    .sort((a, b) => parseKstToDate(a.eating_at) - parseKstToDate(b.eating_at));
 }
