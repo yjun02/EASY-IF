@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { LogOut, Trash2, Clock, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
 import SEO from '../components/SEO';
 import { differenceInHours, addHours, format } from 'date-fns';
@@ -206,6 +207,25 @@ export default function Settings({ session, isGuest, onGuestEnd }) {
               </div>
               <ChevronRight size={20} className="opacity-50" />
             </button>
+          </div>
+        </div>
+
+        {/* Legal Links */}
+        <div className="mb-10">
+          <h3 className="text-sm font-bold text-gray-500 mb-3 px-1">법적 문서</h3>
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+            <Link to="/terms" className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b border-gray-200 text-gray-700">
+              <div className="flex items-center gap-3">
+                <span className="font-bold">서비스 이용약관</span>
+              </div>
+              <ChevronRight size={20} className="opacity-50" />
+            </Link>
+            <Link to="/privacy" className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-gray-700">
+              <div className="flex items-center gap-3">
+                <span className="font-bold">개인정보처리방침</span>
+              </div>
+              <ChevronRight size={20} className="opacity-50" />
+            </Link>
           </div>
         </div>
       </div>

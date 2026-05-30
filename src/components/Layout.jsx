@@ -4,9 +4,7 @@ import { Home, Settings as SettingsIcon, Calendar, BookOpen, Info, Play } from '
 const FooterContent = () => (
   <div className="text-center md:text-left text-xs text-gray-400 font-medium">
     <div className="flex items-center justify-center md:justify-start gap-3 mb-3">
-      <Link to="/terms" className="hover:text-gray-600 transition-colors">서비스 이용약관</Link>
-      <span className="text-gray-300">|</span>
-      <Link to="/privacy" className="hover:text-gray-600 transition-colors font-bold">개인정보처리방침</Link>
+      <span className="text-gray-400">서비스 이용약관 및 개인정보처리방침은 설정에서 확인하실 수 있습니다.</span>
     </div>
     <p>© {new Date().getFullYear()} 간단하게 간단하자: EASY IF</p>
     <p className="mt-1">
